@@ -1158,7 +1158,7 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                 
                 //////////////////////////
                 // MUTUAL FRIEND STATUS //
-                char *regex_str = g_printf_strdup("Your friend %s (?:has entered Battle\\.net|has exited Battle\\.net|entered a (?:.+) game called (?:.+))\\.", g_regex_escape_string(who_n));
+                char *regex_str = g_strdup_printf("Your friend %s (?:has entered Battle\\.net|has exited Battle\\.net|entered a (?:.+) game called (?:.+))\\.", g_regex_escape_string(who_n, -1));
                     
                 regex = g_regex_new(regex_str, 0, 0, &e);
                 
@@ -1186,6 +1186,7 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                 // isn't working as intended >:/
             //}
             break;
+        }
         case BNET_EID_TALK:
             purple_debug_info("bnet", "USER TALK %s %x %dms: %s\n",
                 who_n, flags, ping, what);
