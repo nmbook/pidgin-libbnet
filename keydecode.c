@@ -331,16 +331,13 @@ gsize bnet_key_calculate_hash(CDKeyDecoder *ctx, const guint32 clientToken,
         {
             guint32 product = (guint32) bnet_key_get_product(ctx);
             guint32 value1 = (guint32) bnet_key_get_val1(ctx);
-            guint32 zero = 0;
+            //guint32 zero = 0;
             unsigned char *value2x = g_malloc0(10);
-            bnet_key_get_long_val2(ctx, value2x);
-            purple_debug_info("bnet", "key prv: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
-                value2x[0], value2x[1], value2x[2], value2x[3], 
-                value2x[4], value2x[5], value2x[6], value2x[7], 
-                value2x[8], value2x[9]);
-            
             sha1_context sha;
             guint8 res[SHA1_HASH_SIZE];
+            
+            bnet_key_get_long_val2(ctx, (char *)value2x);
+            
             sha.version = SHA1;
             sha1_reset(&sha);
             sha1_input(&sha, (guint8 *)(&clientToken), BNET_SIZE_DWORD);
@@ -559,10 +556,6 @@ gboolean process_w3(CDKeyDecoder *ctx)
 #endif
 
         ctx->value1 = LSB4(*(uint32_t*) (((char*) values) + 2)) & 0xFFFFFF03;
-
-        
-            purple_debug_info("bnet", "key VALs: %02x %02x %02x %02x\n",
-                values[0], values[1], values[2], values[3]);
         
         ctx->w3value2 = g_malloc0(10);
 #if LITTLEENDIAN

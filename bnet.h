@@ -24,7 +24,7 @@
 #include <errno.h>
 
 // libpurple includes
-//#include "internal.h"
+#include "internal.h"
 
 #include "roomlist.h"
 #include "blist.h"
@@ -51,7 +51,7 @@
 #define PLUGIN_ID          "prpl-ribose-bnet"
 #define PLUGIN_NAME        "Classic Battle.net"
 #define PLUGIN_MAJOR_VER    0
-#define PLUGIN_MINOR_VER    6
+#define PLUGIN_MINOR_VER    8
 #define PLUGIN_MICRO_VER    0
 #define PLUGIN_SHORT_DESCR "Classic Battle.net Chat Server Protocol Plugin"
 #define PLUGIN_DESCR       "Classic Battle.net Chat Server Protocol. Allows you to connect to classic Battle.net to chat with users on StarCraft, Diablo/II, and WarCraft II/III and their expansions."

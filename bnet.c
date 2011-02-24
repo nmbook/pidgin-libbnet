@@ -1146,11 +1146,36 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
             }
             break;
         case BNET_EID_WHISPER:
+        {
+            gboolean prpl_level_ignore = FALSE;
             purple_debug_info("bnet", "USER WHISPER %s %x %dms: %s\n",
                 who_n, flags, ping, what);
             
-            serv_got_im(gc, who_n, purple_markup_escape_text(what, strlen(what)),
-                PURPLE_MESSAGE_RECV, time(NULL));
+            if (strlen(what) > 0) {
+                GError *e = NULL;
+                GMatchInfo *mi = NULL;
+                GRegex *regex = NULL;
+                
+                //////////////////////////
+                // MUTUAL FRIEND STATUS //
+                char *regex_str = g_printf_strdup("Your friend %s (?:has entered Battle\\.net|has exited Battle\\.net|entered a (?:.+) game called (?:.+))\\.", g_regex_escape_string(who_n));
+                    
+                regex = g_regex_new(regex_str, 0, 0, &e);
+                
+                if (regex == NULL) {
+                    purple_debug_warning("bnet", "regex create failed: %s\n", e->message);
+                } else if (g_regex_match(regex, what, 0, &mi) &&
+                           purple_account_get_bool(bnet->account, "hidemutual", TRUE)) {
+                    prpl_level_ignore = TRUE;
+                }
+                g_match_info_free(mi);
+                g_regex_unref(regex);
+            }
+            
+            if (!prpl_level_ignore) {
+                serv_got_im(gc, who_n, purple_markup_escape_text(what, strlen(what)),
+                    PURPLE_MESSAGE_RECV, time(NULL));
+            }
             
             //if (bnet->is_away) {
                 // our "auto-response" is sent by BNET if we are away
@@ -1457,7 +1482,7 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                 ////////////////////////
                 // STILL AWAY WARNING //
                 regex = g_regex_new(
-                    "You are (still|now|no longer) marked as (?:being |)away.", 0, 0, &e);
+                    "You are (still|now|no longer) marked as (?:being |)away\\.", 0, 0, &e);
                 
                 if (regex == NULL) {
                     purple_debug_warning("bnet", "regex create failed: %s\n", e->message);
@@ -1496,7 +1521,7 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                 //////////////////
                 // DND RESPONSE //
                 regex = g_regex_new(
-                    "Do Not Disturb mode (engaged|cancelled).", 0, 0, &e);
+                    "Do Not Disturb mode (engaged|cancelled)\\.", 0, 0, &e);
                 
                 if (regex == NULL) {
                     purple_debug_warning("bnet", "regex create failed: %s\n", e->message);
@@ -3326,8 +3351,8 @@ static gboolean bnet_channeldata_user(BnetConnectionData *bnet, const char *who)
                 purple_notify_user_info_add_pair(bnet->lookup_info,
                         "Diablo II character", "an open Battle.net character");
             } else {
-                char *realm_name; char *char_name; char *bytes;
-                char char_type, char_level, char_creation_flags, char_current_act, char_ladder_season;
+                char *realm_name; char *char_name; unsigned char *bytes;
+                unsigned char char_type, char_level, char_creation_flags, char_current_act, char_ladder_season;
                 char *char_type_name;
                 gboolean is_exp;
                 char *char_diff_text;
@@ -3337,7 +3362,7 @@ static gboolean bnet_channeldata_user(BnetConnectionData *bnet, const char *who)
                 loc += strlen(realm_name) + 1;
                 char_name = loc;
                 loc += strlen(char_name) + 1;
-                bytes = loc;
+                bytes = (unsigned char *)loc;
                 char_type = bytes[13];
                 char_level = bytes[25];
                 char_creation_flags = bytes[26];
@@ -4264,6 +4289,9 @@ init_plugin(PurplePlugin *plugin)
     prpl_info.protocol_options = g_list_append(prpl_info.protocol_options, option);
     
     option = purple_account_option_string_new("Logon Server", "bnlsserver", BNET_DEFAULT_BNLSSERVER);
+    prpl_info.protocol_options = g_list_append(prpl_info.protocol_options, option);
+    
+    option = purple_account_option_bool_new("Hide mutual friend status-change messages", "hidemutual", TRUE);
     prpl_info.protocol_options = g_list_append(prpl_info.protocol_options, option);
     
     for (c = bnet_cmds; c && c->name; c++) {
