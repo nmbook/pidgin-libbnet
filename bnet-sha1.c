@@ -54,6 +54,9 @@
  *    from him. <3
  */
 
+#ifndef _BNET_SHA1_C_
+#define _BNET_SHA1_C_
+ 
 #include "bnet-sha1.h"
 
 #define SHA1RoL(bits, word) \
@@ -359,6 +362,7 @@ uint32_t sha1_checksum(uint8_t *data, uint32_t length, uint32_t version){
   sha1_input(&ctx, data, length);
   sha1_digest(&ctx, digest);
   
-  return *((uint32_t*)&digest[0]) ^ *((uint32_t*)&digest[4]) ^ 
-     *((uint32_t*)&digest[8]) ^ *((uint32_t*)&digest[12]) ^ *((uint32_t*)&digest[16]);
+  return *((uint32_t*)(&digest[0])) ^ *((uint32_t*)(&digest[4])) ^ 
+     *((uint32_t*)(&digest[8])) ^ *((uint32_t*)(&digest[12])) ^ *((uint32_t*)(&digest[16]));
 }
+#endif

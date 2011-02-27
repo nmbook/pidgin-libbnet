@@ -17,6 +17,9 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#ifndef _BNET_H_
+#define _BNET_H_
+ 
 // libraries
 #include <glib.h>
 #include <string.h>
@@ -96,9 +99,9 @@
 #define BNET_RECORD_IRONMAN 8
 
 // includes
-#include "packets.c"
-#include "bnet-sha1.c"
-#include "keydecode.c"
+#include "packets.h"
+#include "bnet-sha1.h"
+#include "keydecode.h"
 //#include "nls.c"
 
 // this enum specifies choosable game types
@@ -572,9 +575,9 @@ static int bnet_send_PING(BnetConnectionData *bnet, guint32 cookie);
 static int bnet_send_READUSERDATA(BnetConnectionData *bnet,
     int request_cookie, const char *username, char **keys);
 static int bnet_send_WRITEUSERDATA(BnetConnectionData *bnet,
-    char *sex, char *age, char *location, char *description);
+    const char *sex, const char *age, const char *location, const char *description);
 static int bnet_send_WRITEUSERDATA_2(BnetConnectionData *bnet,
-    char *key, char *val);
+    const char *key, const char *val);
 static int bnet_send_AUTH_INFO(BnetConnectionData *bnet);
 static int bnet_send_AUTH_CHECK(BnetConnectionData *bnet,
        guint32 exe_version, guint32 exe_checksum, char *exe_info);
@@ -653,9 +656,11 @@ static void bnet_roomlist_cancel(PurpleRoomlist *list);
 static void bnet_set_status(PurpleAccount *account, PurpleStatus *status);
 void bnet_set_away(BnetConnectionData *bnet, gboolean new_state, const gchar *message);
 void bnet_set_dnd(BnetConnectionData *bnet, gboolean new_state, const gchar *message);
-static char *bnet_normalize(const PurpleAccount *account, const char *in);
-static char *bnet_d2_normalize(PurpleAccount *account, char *in);
-static char *bnet_account_normalize(PurpleAccount *account, char *in);
+static const char *bnet_normalize(const PurpleAccount *account, const char *in);
+static const char *bnet_d2_normalize(const PurpleAccount *account, const char *in);
+static const char *bnet_account_normalize(const PurpleAccount *account, const char *in);
 static gboolean bnet_is_d2(BnetConnectionData *bnet);
 static gboolean bnet_is_w3(BnetConnectionData *bnet);
 static GList *bnet_actions(PurplePlugin *plugin, gpointer context);
+
+#endif

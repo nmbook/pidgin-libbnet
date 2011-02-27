@@ -17,6 +17,16 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#ifndef _PACKETS_H_
+#define _PACKETS_H_
+
+// libraries
+#include <glib.h>
+#include <string.h>
+#include <stdlib.h>
+#include "internal.h"
+#include "debug.h"
+
 // buffer size
 #define BNET_INITIAL_BUFSIZE 512
 
@@ -180,20 +190,22 @@ typedef struct {
     guint32 dwHighDateTime;
 } WINDOWS_FILETIME;
 
-static void bnet_packet_free(BnetPacket *bnet_packet);
-static gboolean bnet_packet_insert(BnetPacket *bnet_packet, gconstpointer data, const gsize length);
-static BnetPacket *bnet_packet_refer(const guint8 *start, const gsize length);
-static BnetPacket *bnet_packet_refer_bnls(const guint8 *start, const gsize length);
-static void *bnet_packet_read(BnetPacket *bnet_packet, const gsize size);
-static char *bnet_packet_read_cstring(BnetPacket *bnet_packet);
-static guint64 bnet_packet_read_qword(BnetPacket *bnet_packet);
-static guint32 bnet_packet_read_dword(BnetPacket *bnet_packet);
-static guint16 bnet_packet_read_word(BnetPacket *bnet_packet);
-static guint8 bnet_packet_read_byte(BnetPacket *bnet_packet);
-static BnetPacket *bnet_packet_create(const gsize header_length);
-static int bnet_packet_send(BnetPacket *bnet_packet, const guint8 id, const int fd);
-static int bnet_packet_send_bnls(BnetPacket *bnet_packet, const guint8 id, const int fd);
-static char *bnet_packet_debug(BnetPacket *bnet_packet);
+void bnet_packet_free(BnetPacket *bnet_packet);
+gboolean bnet_packet_insert(BnetPacket *bnet_packet, gconstpointer data, const gsize length);
+BnetPacket *bnet_packet_refer(const guint8 *start, const gsize length);
+BnetPacket *bnet_packet_refer_bnls(const guint8 *start, const gsize length);
+void *bnet_packet_read(BnetPacket *bnet_packet, const gsize size);
+char *bnet_packet_read_cstring(BnetPacket *bnet_packet);
+guint64 bnet_packet_read_qword(BnetPacket *bnet_packet);
+guint32 bnet_packet_read_dword(BnetPacket *bnet_packet);
+guint16 bnet_packet_read_word(BnetPacket *bnet_packet);
+guint8 bnet_packet_read_byte(BnetPacket *bnet_packet);
+BnetPacket *bnet_packet_create(const gsize header_length);
+int bnet_packet_send(BnetPacket *bnet_packet, const guint8 id, const int fd);
+int bnet_packet_send_bnls(BnetPacket *bnet_packet, const guint8 id, const int fd);
+char *bnet_packet_debug(BnetPacket *bnet_packet);
 void clear_line(char *line, int size);
 char * ascii_char(char *position, int c);
 char * hex_char(char *position, int c);
+
+#endif
