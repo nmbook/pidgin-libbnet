@@ -1188,10 +1188,11 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                 GError *e = NULL;
                 GMatchInfo *mi = NULL;
                 GRegex *regex = NULL;
+                const char *who_gaten = bnet_gateway_normalize(bnet->account, who_n);
                 
                 //////////////////////////
                 // MUTUAL FRIEND STATUS //
-                char *regex_str = g_strdup_printf("Your friend %s (?:has entered Battle\\.net|has exited Battle\\.net|entered a (?:.+) game called (?:.+))\\.", g_regex_escape_string(who_n, -1));
+                char *regex_str = g_strdup_printf("Your friend %s (?:has entered Battle\\.net|has exited Battle\\.net|entered a (?:.+) game called (?:.+))\\.", g_regex_escape_string(who_gaten, -1));
                     
                 regex = g_regex_new(regex_str, 0, 0, &e);
                 
@@ -1705,7 +1706,6 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
     
     g_free(who);
     g_free(what);
-    g_free(who_n);
 }
 
 static void bnet_recv_MESSAGEBOX(BnetConnectionData *bnet, BnetPacket *pkt)
@@ -2026,6 +2026,8 @@ static void bnet_recv_AUTH_CHECK(BnetConnectionData *bnet, BnetPacket *pkt)
     char *tmpf = NULL;
     char *tmpkn = NULL;
     
+    PurpleConnectionError conn_error = PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED;
+    
     if (result == BNET_SUCCESS) {
         purple_debug_info("bnet", "Version and key check passed!\n");
         if (bnet->create_if_dne) {
@@ -2041,48 +2043,54 @@ static void bnet_recv_AUTH_CHECK(BnetConnectionData *bnet, BnetPacket *pkt)
     } else if (result & BNET_AUTH_CHECK_VERERROR_MASK) {
         switch (result & BNET_AUTH_CHECK_ERROR_MASK) {
             case BNET_AUTH_CHECK_VERERROR_INVALID:
-                tmp = "Version invalid";
+                tmp = "Version invalid%s.";
                 break;
             case BNET_AUTH_CHECK_VERERROR_OLD:
-                tmp = "Old version";
+                tmp = "Old version%s.";
                 break;
             case BNET_AUTH_CHECK_VERERROR_NEW:
-                tmp = "New version";
+                tmp = "New version%s.";
                 break;
             default:
-                tmp = "Version invalid";
+                tmp = "Version invalid%s.";
                 break;
         }
     } else if (result & BNET_AUTH_CHECK_KEYERROR_MASK) {
         guint32 keynum = (result & BNET_AUTH_CHECK_KEYNUMBER_MASK) >> 4;
         switch (result & BNET_AUTH_CHECK_ERROR_MASK) {
             case BNET_AUTH_CHECK_KEYERROR_INVALID:
-                tmp = "CD-key invalid";
+                tmp = "CD-key invalid%s.";
                 break;
             case BNET_AUTH_CHECK_KEYERROR_INUSE:
-                tmp = "CD-key is in use";
+                tmp = "CD-key is in use%s.";
+                if (strlen(extra_info) > 0) {
+                    if (strcmp(extra_info, bnet->username) == 0) {
+                        tmp = "CD-key is in use%s. Battle.net may not have discovered that you disconnected yet. Try again in five minutes.";
+                        conn_error = PURPLE_CONNECTION_ERROR_NETWORK_ERROR;
+                    }
+                }
                 break;
             case BNET_AUTH_CHECK_KEYERROR_BANNED:
-                tmp = "CD-key is banned";
+                tmp = "CD-key is banned%s.";
                 break;
             case BNET_AUTH_CHECK_KEYERROR_BADPRODUCT:
-                tmp = "CD-key is for another game";
+                tmp = "CD-key is for another game%s.";
                 break;
             default:
-                tmp = "CD-key invalid";
+                tmp = "CD-key invalid%s.";
                 break;
         }
         tmpkn = g_strdup_printf("%s%s", (keynum == 1) ? "Expansion " : "", tmp);
         tmp = tmpkn;
     } else if (result & BNET_AUTH_CHECK_VERCODEERROR_MASK) {
-        tmp = "Version code invalid";
+        tmp = "Version code invalid%s.";
     } else {
-        tmp = "Authorization failed";
+        tmp = "Authorization failed%s.";
     }
     
     tmpe = g_strdup_printf(" (%s).", extra_info);
-    tmpf = g_strdup_printf("%s%s", tmp, strlen(extra_info) > 0 ? tmpe : ".");
-    purple_connection_error_reason (gc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, tmpf);
+    tmpf = g_strdup_printf(tmp, strlen(extra_info) > 0 ? tmpe : "");
+    purple_connection_error_reason (gc, conn_error, tmpf);
     
     g_free(tmpe);
     g_free(tmpf);
@@ -2599,7 +2607,7 @@ static double get_tz_bias(void)
     return difftime(t_utc, t_local);
 }
 
-char *bnet_format_strftime(char *ftime_str)
+static char *bnet_format_strftime(char *ftime_str)
 {
     WINDOWS_FILETIME ft;
     char *space_loc;
@@ -2680,7 +2688,7 @@ char *bnet_format_strftime(char *ftime_str)
     return g_strdup_printf("%04d/%02d/%02d at %02d:%02d:%02d", yr, (mo + 1), (day + 1), hr, min, sec);
 }
 
-char *bnet_format_strsec(char *secs_str)
+static char *bnet_format_strsec(char *secs_str)
 {
     char *days_str;
     
@@ -2826,11 +2834,16 @@ static int bnet_send_raw(PurpleConnection *gc, const char *buf, int len)
     char *mybuf = g_strdup(buf);
     int ret = -1;
     
+    char *msg_s;
+    
     if (len < strlen(mybuf)) {
         mybuf[len] = '\0'; // end
     }
     
-    ret = bnet_send_CHATCOMMAND(bnet, mybuf);
+    msg_s = purple_markup_strip_html(mybuf);
+    
+    ret = bnet_send_CHATCOMMAND(bnet, msg_s);
+    g_free(msg_s);
     
     g_free(mybuf);
     
@@ -2849,6 +2862,7 @@ static int bnet_send_whisper(PurpleConnection *gc, const char *who,
     BnetConnectionData *bnet = gc->proto_data;
     char *msg_nohtml;
     char *cmd;
+    int msg_len;
     
     if (!bnet->is_online) {
         return -ENOTCONN;
@@ -2858,7 +2872,7 @@ static int bnet_send_whisper(PurpleConnection *gc, const char *who,
         return -BNET_EBADCHARS;
     }
     
-    msg_nohtml = purple_unescape_text(message);
+    msg_nohtml = purple_markup_strip_html(message);
     if (strlen(msg_nohtml) > BNET_MSG_MAXSIZE) {
         return -E2BIG;
     }
@@ -2872,7 +2886,11 @@ static int bnet_send_whisper(PurpleConnection *gc, const char *who,
     bnet->last_sent_to = g_strdup(who);
     bnet->awaiting_whisper_confirm = TRUE;
     
-    return strlen(msg_nohtml);
+    msg_len = strlen(msg_nohtml);
+    
+    g_free(msg_nohtml);
+    
+    return msg_len;
 }
 
     /**
@@ -3661,13 +3679,13 @@ static int bnet_chat_im(PurpleConnection *gc, int chat_id, const char *message, 
     }
 }
 
-const char *bnet_list_icon(PurpleAccount *a, PurpleBuddy *b)
+static const char *bnet_list_icon(PurpleAccount *a, PurpleBuddy *b)
 {
     //star, sexp, d2dv, d2xp, w2bn, war3, w3xp, drtl, chat
     return "bnet";
 }
 
-const char *bnet_list_emblem(PurpleBuddy *b)
+static const char *bnet_list_emblem(PurpleBuddy *b)
 {
     BnetFriendInfo *bfi = purple_buddy_get_protocol_data(b);
     if (bfi != NULL && bfi->location >= BNET_FRIEND_LOCATION_GAME_PUBLIC) {
@@ -3679,7 +3697,7 @@ const char *bnet_list_emblem(PurpleBuddy *b)
     }
 }
 
-char *bnet_status_text(PurpleBuddy *b)
+static char *bnet_status_text(PurpleBuddy *b)
 {
     BnetFriendInfo *bfi = purple_buddy_get_protocol_data(b);
     if (bfi == NULL)
@@ -3690,7 +3708,7 @@ char *bnet_status_text(PurpleBuddy *b)
         return NULL;
 }
 
-void bnet_tooltip_text(PurpleBuddy *buddy,
+static void bnet_tooltip_text(PurpleBuddy *buddy,
                        PurpleNotifyUserInfo *info,
                        gboolean full)
 {
@@ -3725,7 +3743,7 @@ void bnet_tooltip_text(PurpleBuddy *buddy,
     }
 }
 
-char *get_location_text(BnetFriendLocation location, char *location_name)
+static char *get_location_text(BnetFriendLocation location, char *location_name)
 {
     switch (location)
     {
@@ -3761,7 +3779,7 @@ char *get_location_text(BnetFriendLocation location, char *location_name)
     }
 }
 
-char *get_product_name(BnetProductID product)
+static char *get_product_name(BnetProductID product)
 {
     switch (product)
     {
@@ -3805,7 +3823,7 @@ char *get_product_name(BnetProductID product)
     }
 }
 
-char *get_product_id_str(BnetProductID product)
+static char *get_product_id_str(BnetProductID product)
 {
     guint32 *pproduct;
     char *ret;
@@ -3977,7 +3995,7 @@ static void bnet_set_status(PurpleAccount *account, PurpleStatus *status)
     }
 }
 
-void bnet_set_away(BnetConnectionData *bnet, gboolean new_state, const gchar *message)
+static void bnet_set_away(BnetConnectionData *bnet, gboolean new_state, const gchar *message)
 {
     char *msg;
     if (message == NULL || strlen(message) == 0)
@@ -3987,8 +4005,10 @@ void bnet_set_away(BnetConnectionData *bnet, gboolean new_state, const gchar *me
     
     bnet->setting_away_status = TRUE;
     if (new_state) {
+        char *msg_s = purple_markup_strip_html(msg);
         char *cmd = g_strdup_printf("/away %s", msg);
         bnet_send_CHATCOMMAND(bnet, cmd);
+        g_free(msg_s);
         g_free(cmd);
         
         bnet->away_msg = msg;
@@ -4001,7 +4021,7 @@ void bnet_set_away(BnetConnectionData *bnet, gboolean new_state, const gchar *me
     }
 }
 
-void bnet_set_dnd(BnetConnectionData *bnet, gboolean new_state, const gchar *message)
+static void bnet_set_dnd(BnetConnectionData *bnet, gboolean new_state, const gchar *message)
 {
     char *msg;
     if (message == NULL || strlen(message) == 0)
@@ -4011,8 +4031,10 @@ void bnet_set_dnd(BnetConnectionData *bnet, gboolean new_state, const gchar *mes
     
     bnet->setting_dnd_status = TRUE;
     if (new_state) {
+        char *msg_s = purple_markup_strip_html(msg);
         char *cmd = g_strdup_printf("/dnd %s", msg);
         bnet_send_CHATCOMMAND(bnet, cmd);
+        g_free(msg_s);
         g_free(cmd);
         
         bnet->dnd_msg = msg;
@@ -4103,6 +4125,30 @@ static const char *bnet_account_normalize(const PurpleAccount *account, const ch
     g_memmove((char *)o, out, strlen(out) + 1);
     g_free(out);
     return o;
+}
+
+// removes the first @ and everything after it from the given account name
+// does not remove any @ that begins the username
+static const char *bnet_gateway_normalize(const PurpleAccount *account, const char *in)
+{
+    static char out[64];
+    
+    char *o = g_strdup(in);
+    int i;
+    
+    for (i = 0; i < 64; i++) {
+        if (o[i] == '\0') {
+            break;
+        }
+        if (i > 0 && o[i] == '@') {
+            o[i] = '\0';
+            break;
+        }
+    }
+    g_memmove((char *)out, o, strlen(o) + 1);
+    g_free(o);
+    
+    return out;
 }
 
 static gboolean bnet_is_d2(BnetConnectionData *bnet)

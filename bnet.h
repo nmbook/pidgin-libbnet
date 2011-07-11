@@ -27,7 +27,9 @@
 #include <errno.h>
 
 // libpurple includes
+#ifdef _WIN32
 #include "internal.h"
+#endif
 
 #include "roomlist.h"
 #include "blist.h"
@@ -331,10 +333,9 @@ typedef struct {
     gboolean setting_dnd_status;
     
     PurpleConversation *last_command_conv;
-    // action queue
-    GQueue *action_q;
-    // item being requested of B.net now.
-    //BnetQueueElement *active_q_item;
+    
+    // priority queue
+    //BnetQueue *mqueue;
 } BnetConnectionData;
 
 typedef struct {
@@ -616,8 +617,8 @@ static gint bnet_channel_user_compare(gconstpointer a, gconstpointer b);
 static PurpleCmdRet bnet_handle_cmd(PurpleConversation *conv, const gchar *cmdword,
                                   gchar **args, gchar **error, void *data);
 static double get_tz_bias(void);
-char *bnet_format_strftime(char *ftime_str);
-char *bnet_format_strsec(char *secs_str);
+static char *bnet_format_strftime(char *ftime_str);
+static char *bnet_format_strsec(char *secs_str);
 static void bnet_friend_update(BnetConnectionData *bnet, int index, BnetFriendInfo *bfi, gboolean replace);
 static void bnet_close(PurpleConnection *gc);
 static int bnet_send_raw(PurpleConnection *gc, const char *buf, int len);
@@ -639,26 +640,27 @@ static char *bnet_channel_message_parse(char *stats_data, BnetChatEventFlags fla
 static PurpleConvChatBuddyFlags bnet_channel_flags_to_prpl_flags(BnetChatEventFlags flags);
 static void bnet_join_chat(PurpleConnection *gc, GHashTable *components);
 static int bnet_chat_im(PurpleConnection *gc, int chat_id, const char *message, PurpleMessageFlags flags);
-const char *bnet_list_icon(PurpleAccount *a, PurpleBuddy *b);
-const char *bnet_list_emblem(PurpleBuddy *b);
-char *bnet_status_text(PurpleBuddy *b);
-void bnet_tooltip_text(PurpleBuddy *buddy,
+static const char *bnet_list_icon(PurpleAccount *a, PurpleBuddy *b);
+static const char *bnet_list_emblem(PurpleBuddy *b);
+static char *bnet_status_text(PurpleBuddy *b);
+static void bnet_tooltip_text(PurpleBuddy *buddy,
                        PurpleNotifyUserInfo *info,
                        gboolean full);
-char *get_location_text(BnetFriendLocation location, char *location_name);
-char *get_product_name(BnetProductID product);
-char *get_product_id_str(BnetProductID product);
+static char *get_location_text(BnetFriendLocation location, char *location_name);
+static char *get_product_name(BnetProductID product);
+static char *get_product_id_str(BnetProductID product);
 static GList *bnet_status_types(PurpleAccount *account);
 static void bnet_add_buddy(PurpleConnection *gc, PurpleBuddy *buddy, PurpleGroup *group);
 static void bnet_remove_buddy(PurpleConnection *gc, PurpleBuddy *buddy, PurpleGroup *group);
 static PurpleRoomlist *bnet_roomlist_get_list(PurpleConnection *gc);
 static void bnet_roomlist_cancel(PurpleRoomlist *list);
 static void bnet_set_status(PurpleAccount *account, PurpleStatus *status);
-void bnet_set_away(BnetConnectionData *bnet, gboolean new_state, const gchar *message);
-void bnet_set_dnd(BnetConnectionData *bnet, gboolean new_state, const gchar *message);
+static void bnet_set_away(BnetConnectionData *bnet, gboolean new_state, const gchar *message);
+static void bnet_set_dnd(BnetConnectionData *bnet, gboolean new_state, const gchar *message);
 static const char *bnet_normalize(const PurpleAccount *account, const char *in);
 static const char *bnet_d2_normalize(const PurpleAccount *account, const char *in);
 static const char *bnet_account_normalize(const PurpleAccount *account, const char *in);
+static const char *bnet_gateway_normalize(const PurpleAccount *account, const char *in);
 static gboolean bnet_is_d2(BnetConnectionData *bnet);
 static gboolean bnet_is_w3(BnetConnectionData *bnet);
 static GList *bnet_actions(PurplePlugin *plugin, gpointer context);

@@ -24,7 +24,9 @@
 #include <glib.h>
 #include <string.h>
 #include <stdlib.h>
+#ifdef _WIN32
 #include "internal.h"
+#endif
 #include "debug.h"
 
 // buffer size
