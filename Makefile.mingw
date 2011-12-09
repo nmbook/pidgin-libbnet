@@ -1,15 +1,19 @@
 #
 # Makefile.mingw
 #
-# Description: Makefile for win32 (mingw) version of libclbnet
+# Description: Makefile for win32 (mingw) version of libbnet
 #
 
 PIDGIN_TREE_TOP := ../../..
 include $(PIDGIN_TREE_TOP)/libpurple/win32/global.mak
 
+GMP_TOP ?= $(PIDGIN_TREE_TOP)/../win32-dev/gmp-5.0.1
+
 TARGET = libbnet
 TYPE = PLUGIN
 
+# A lot of b.net depends on using constants such as 'WAR3' as
+# "character" constants
 GCCWARNINGS += -Wno-multichar
 
 # Static or Plugin...
@@ -25,21 +29,26 @@ endif
 ##
 ## INCLUDE PATHS
 ##
-INCLUDE_PATHS +=	-I. \
+INCLUDE_PATHS += \
+            -I/include \
+			-I. \
 			-I$(GTK_TOP)/include \
 			-I$(GTK_TOP)/include/glib-2.0 \
 			-I$(GTK_TOP)/lib/glib-2.0/include \
 			-I$(PURPLE_TOP) \
 			-I$(PURPLE_TOP)/win32 \
-			-I$(PIDGIN_TREE_TOP)
+			-I$(PIDGIN_TREE_TOP) \
+            -I$(GMP_TOP)/include
 
-LIB_PATHS +=		-L$(GTK_TOP)/lib \
-			-L$(PURPLE_TOP)
+LIB_PATHS += \
+			-L$(GTK_TOP)/lib \
+			-L$(PURPLE_TOP) \
+            -L$(GMP_TOP)/lib
 
 ##
 ##  SOURCES, OBJECTS
 ##
-C_SRC = bnet.c packets.c bnet-sha1.c keydecode.c
+C_SRC = bnet.c packets.c srp.c keydecode.c bnet-sha1.c
         
 
 OBJECTS = $(C_SRC:%.c=%.o)
@@ -47,11 +56,12 @@ OBJECTS = $(C_SRC:%.c=%.o)
 ##
 ## LIBRARIES
 ##
-LIBS =	\
+LIBS = \
 			-lglib-2.0 \
 			-lintl \
 			-lws2_32 \
-			-lpurple
+			-lpurple \
+			-lgmp
 
 include $(PIDGIN_COMMON_RULES)
 

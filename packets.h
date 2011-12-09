@@ -22,6 +22,7 @@
 
 // libraries
 #include <glib.h>
+
 #include <string.h>
 #include <stdlib.h>
 #ifdef _WIN32
@@ -72,6 +73,7 @@ typedef enum {
     BNET_SID_FRIENDSADD              = 0x67,
     BNET_SID_FRIENDSREMOVE           = 0x68,
     BNET_SID_FRIENDSPOSITION         = 0x69,
+    BNET_SID_CLANCREATIONINVITATION  = 0x72,
 } BnetPacketID;
 
 // bnls packet ids

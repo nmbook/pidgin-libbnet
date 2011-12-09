@@ -22,12 +22,13 @@
  
 // libraries
 #include <glib.h>
+
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
 
 // libpurple includes
-#ifdef _WIN32
+#ifdef _WIN32 // Win/Cygwin/Mingw doesn't compile without this
 #include "internal.h"
 #endif
 
@@ -58,10 +59,10 @@
 #define PLUGIN_MAJOR_VER    0
 #define PLUGIN_MINOR_VER    8
 #define PLUGIN_MICRO_VER    0
-#define PLUGIN_SHORT_DESCR "Classic Battle.net Chat Server Protocol Plugin"
+#define PLUGIN_SHORT_DESCR "Classic Battle.net Protocol Plugin"
 #define PLUGIN_DESCR       "Classic Battle.net Chat Server Protocol. Allows you to connect to classic Battle.net to chat with users on StarCraft, Diablo/II, and WarCraft II/III and their expansions."
 #define PLUGIN_AUTHOR      "Nate Book <nmbook@gmail.com>"
-#define PLUGIN_WEBSITE     "http://ribose.no-ip.org"
+#define PLUGIN_WEBSITE     "http://www.ribose.me"
 #define QUOTE_(x)           #x
 #define QUOTE(x)            QUOTE_(x)
 #define PLUGIN_STR_VER      QUOTE(PLUGIN_MAJOR_VER.PLUGIN_MINOR_VER.PLUGIN_MICRO_VER)
@@ -69,7 +70,7 @@
 // default setting values
 #define BNET_DEFAULT_SERVER     "uswest.battle.net"
 #define BNET_DEFAULT_PORT        6112
-#define BNET_DEFAULT_BNLSSERVER "ribose.no-ip.org"
+#define BNET_DEFAULT_BNLSSERVER "bnls.net"
 #define BNET_DEFAULT_BNLSPORT    9367
 
 // logon steps
@@ -104,9 +105,10 @@
 #include "packets.h"
 #include "bnet-sha1.h"
 #include "keydecode.h"
-//#include "nls.c"
+#include "srp.h"
 
 // this enum specifies choosable game types
+// this is the order BNLS uses too
 typedef enum {
     BNET_GAME_TYPE_STAR = 0x01,
     BNET_GAME_TYPE_SEXP = 0x02,
@@ -209,6 +211,7 @@ typedef struct {
 */
 // this struct stores extra info for a battle.net connection
 typedef struct {
+    // = 'bnet'
     int magic;
     
     // assocated PurpleAccount
@@ -249,6 +252,10 @@ typedef struct {
     guint32 nls_revision;
     // whether we have completed version checking yet
     gboolean crev_complete;
+    // for logging in
+    srp_t *account_data;
+    // for changing password or creating an account, the "new" srp_t
+    srp_t *account_change_data;
     
     // account data:
     // whether we should create the account if DNE during this logon
@@ -372,8 +379,9 @@ typedef enum {
 } BnetFriendLocation;
 
 typedef struct {
-    // information directly from friend list
+    // account name from friend list
     char *account;
+    // information directly from friend list
     BnetFriendStatus status;
     BnetFriendLocation location;
     BnetProductID product;
@@ -569,7 +577,7 @@ static int bnet_send_JOINCHANNEL(BnetConnectionData *bnet,
 /*static int bnet_queue_CHATCOMMAND(BnetConnectionData *bnet, PurpleConversation *conv,
         BnetCommandID cmd, BnetQueueFunc cb, const char *command);*/
 static int bnet_send_CHATCOMMAND(BnetConnectionData *bnet, const char *command);
-static int bnet_send_LEAVECHAT(BnetConnectionData *bnet);
+//static int bnet_send_LEAVECHAT(BnetConnectionData *bnet);
 static int bnet_send_LOGONRESPONSE2(BnetConnectionData *bnet);
 static int bnet_send_CREATEACCOUNT2(BnetConnectionData *bnet);
 static int bnet_send_PING(BnetConnectionData *bnet, guint32 cookie);
@@ -619,7 +627,10 @@ static PurpleCmdRet bnet_handle_cmd(PurpleConversation *conv, const gchar *cmdwo
 static double get_tz_bias(void);
 static char *bnet_format_strftime(char *ftime_str);
 static char *bnet_format_strsec(char *secs_str);
-static void bnet_friend_update(BnetConnectionData *bnet, int index, BnetFriendInfo *bfi, gboolean replace);
+static void bnet_friend_update(BnetConnectionData *bnet, int index,
+        BnetFriendInfo *bfi, BnetFriendStatus status,
+        BnetFriendLocation location, BnetProductID product_id,
+        const gchar *location_name);
 static void bnet_close(PurpleConnection *gc);
 static int bnet_send_raw(PurpleConnection *gc, const char *buf, int len);
 static int bnet_send_whisper(PurpleConnection *gc, const char *who,

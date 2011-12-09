@@ -55,6 +55,7 @@
 
 // libraries
 #include <glib.h>
+
 #include <ctype.h> // for isdigit(), isalnum(), and toupper()
 #include <string.h> // for memcpy()
 #include <stdio.h> // for sscanf()

@@ -61,26 +61,26 @@
 
 #define SHA1RoL(bits, word) \
     (((word) << (bits)) | ((word) >> (32-(bits))))
-  
+
 #define xSHA1RoL(word, bits) \
     (((word) << (bits)) | ((word) >> (32-(bits))))
 
 #define SHA1batoi(ba, i) \
   ((ba[i] << 24) | (ba[i+1] << 16) | (ba[i+2] << 8) | ba[i+3])
-  
+
 #define xSHA1batoi(ba, i) \
   ((ba[i+3] << 24) | (ba[i+2] << 16) | (ba[i+1] << 8) | ba[i])
-  
+
 #define SHA1itoba(a, ba, i) \
-  (ba[i] = (uint8_t)(a >> 24)); (ba[i+1] = (uint8_t)(a >> 16)); (ba[i+2] = (uint8_t)(a >> 8)); (ba[i+3] = (uint8_t)a);
-  
+  (ba[i] = (guint8)(a >> 24)); (ba[i+1] = (guint8)(a >> 16)); (ba[i+2] = (guint8)(a >> 8)); (ba[i+3] = (guint8)a);
+
 #define xSHA1itoba(a, ba, i) \
-  (ba[i+3] = (uint8_t)(a >> 24)); (ba[i+2] = (uint8_t)(a >> 16)); (ba[i+1] = (uint8_t)(a >> 8)); (ba[i] = (uint8_t)a);
+  (ba[i+3] = (guint8)(a >> 24)); (ba[i+2] = (guint8)(a >> 16)); (ba[i+1] = (guint8)(a >> 8)); (ba[i] = (guint8)a);
 
 /* Local Function Prototyptes */
-void sha1_pad_message(sha1_context *);
-void sha1_process_message_block(sha1_context *);
-static uint32_t sha1_math(uint16_t t, uint32_t B, uint32_t C, uint32_t D);
+static void sha1_pad_message(sha1_context *);
+static void sha1_process_message_block(sha1_context *);
+static guint32 sha1_math(guint16 t, guint32 B, guint32 C, guint32 D);
 
 /*
  *  SHA1Reset
@@ -97,28 +97,28 @@ static uint32_t sha1_math(uint16_t t, uint32_t B, uint32_t C, uint32_t D);
  *    sha Error Code.
  *
  */
-int sha1_reset(sha1_context *ctx){
-  uint8_t x;
-  if (!ctx)
-    return shaNull;
+sha1_result sha1_reset(sha1_context *ctx){
+    guint8 x;
+    if (!ctx)
+        return SHA1_RESULT_NULL;
   
-  ctx->length_low           = 0;
-  ctx->length_high          = 0;
-  ctx->message_block_index  = 0;
+    ctx->length_low           = 0;
+    ctx->length_high          = 0;
+    ctx->message_block_index  = 0;
 
-  ctx->intermediate_hash[0] = 0x67452301;
-  ctx->intermediate_hash[1] = 0xEFCDAB89;
-  ctx->intermediate_hash[2] = 0x98BADCFE;
-  ctx->intermediate_hash[3] = 0x10325476;
-  ctx->intermediate_hash[4] = 0xC3D2E1F0;
+    ctx->intermediate_hash[0] = 0x67452301;
+    ctx->intermediate_hash[1] = 0xEFCDAB89;
+    ctx->intermediate_hash[2] = 0x98BADCFE;
+    ctx->intermediate_hash[3] = 0x10325476;
+    ctx->intermediate_hash[4] = 0xC3D2E1F0;
 
-  for(x = 0; x < 64; x++){
-    ctx->message_block[x] = 0;
-  }
-  ctx->computed  = 0;
-  ctx->corrupted = 0;
+    for (x = 0; x < 64; x++) {
+        ctx->message_block[x] = 0;
+    }
+    ctx->computed  = 0;
+    ctx->corrupted = 0;
 
-  return shaSuccess;
+    return SHA1_RESULT_SUCCESS;
 }
 
 /*
@@ -140,35 +140,36 @@ int sha1_reset(sha1_context *ctx){
  *    sha Error Code.
  *
  */
-int sha1_digest(sha1_context *ctx, uint8_t *digest){
-  int i;
+sha1_result sha1_digest(sha1_context *ctx, guint8 *digest){
+    int i;
 
-  if (!ctx || !digest)
-    return shaNull;
+    if (!ctx || !digest)
+        return SHA1_RESULT_NULL;
 
-  if (ctx->corrupted)
-    return ctx->corrupted;
+    if (ctx->corrupted)
+        return ctx->corrupted;
 
-  if (!ctx->computed){
-    sha1_pad_message(ctx);
+    if (!ctx->computed){
+        sha1_pad_message(ctx);
 
-    ctx->length_low  = 0;
-    ctx->length_high = 0;
-    ctx->computed    = 1;
-  }
+        ctx->length_low  = 0;
+        ctx->length_high = 0;
+        ctx->computed    = 1;
+    }
   
-  if(ctx->version != SHA1){
-    for(i = 0; i < 5; i++){
-      xSHA1itoba(ctx->intermediate_hash[i], digest, i * 4);
+    if (ctx->version != SHA1_TYPE_NORMAL) {
+        for(i = 0; i < 5; i++){
+            xSHA1itoba(ctx->intermediate_hash[i], digest, i * 4);
+        }
+    } else {
+        for(i = 0; i < 5; i++){
+            SHA1itoba(ctx->intermediate_hash[i], digest, i * 4);
+        }
     }
-  }else{
-    for(i = 0; i < 5; i++){
-      SHA1itoba(ctx->intermediate_hash[i], digest, i * 4);
-    }
-  }
 
-  return shaSuccess;
+    return SHA1_RESULT_SUCCESS;
 }
+
 /*
  *  SHA1Input
  *
@@ -189,36 +190,36 @@ int sha1_digest(sha1_context *ctx, uint8_t *digest){
  *    sha Error Code.
  *
  */
-int sha1_input(sha1_context *ctx, const uint8_t *data, uint32_t length){
-  uint32_t x;
-  if(!length)
-    return shaSuccess;
+sha1_result sha1_input(sha1_context *ctx, const guint8 *data, guint32 length){
+    guint32 x;
+    if(!length)
+        return SHA1_RESULT_SUCCESS;
   
-  if(!ctx || !data)
-      return shaNull;
+    if(!ctx || !data)
+        return SHA1_RESULT_NULL;
 
-  if(ctx->computed){
-    ctx->corrupted = shaStateError;
-    return shaStateError;
-  }
-
-  for(x = 0; x < length; x++){
-    ctx->message_block[ctx->message_block_index++] = (data[x] & 0xFF);
-    ctx->length_low += 8;
-
-    if (ctx->length_low == 0){
-      ctx->length_high++;
-      if(ctx->length_high == 0){
-        ctx->corrupted = shaInputTooLong;
-        return shaInputTooLong;
-      }
+    if(ctx->computed){
+        ctx->corrupted = SHA1_RESULT_STATE_ERROR;
+        return SHA1_RESULT_STATE_ERROR;
     }
 
-    if (ctx->message_block_index == 64)
-      sha1_process_message_block(ctx);
-  }
+    for(x = 0; x < length; x++){
+        ctx->message_block[ctx->message_block_index++] = (data[x] & 0xFF);
+        ctx->length_low += 8;
 
-  return shaSuccess;
+        if (ctx->length_low == 0){
+            ctx->length_high++;
+            if(ctx->length_high == 0){
+                ctx->corrupted = SHA1_RESULT_INPUT_TOO_LONG;
+                return SHA1_RESULT_INPUT_TOO_LONG;
+            }
+        }
+
+        if (ctx->message_block_index == 64)
+            sha1_process_message_block(ctx);
+    }
+
+    return SHA1_RESULT_SUCCESS;
 }
 
 /*
@@ -228,11 +229,11 @@ int sha1_input(sha1_context *ctx, const uint8_t *data, uint32_t length){
  *   This is simply so I can have a clean way of 
  * doing the Process in one loop insted of 4.
  */
-static uint32_t sha1_math(uint16_t t, uint32_t B, uint32_t C, uint32_t D){
-  if(t < 20)      return ((B & C) | ((~B) & D));
-  else if(t < 40) return (B ^ C ^ D);
-  else if(t < 60) return ((B & C) | (B & D) | (C & D));
-  else            return (B ^ C ^ D);
+static guint32 sha1_math(guint16 t, guint32 B, guint32 C, guint32 D){
+    if(t < 20)      return ((B & C) | ((~B) & D));
+    else if(t < 40) return (B ^ C ^ D);
+    else if(t < 60) return ((B & C) | (B & D) | (C & D));
+    else            return (B ^ C ^ D);
 }
 /*
  *  SHA1ProcessMessageBlock
@@ -256,46 +257,46 @@ static uint32_t sha1_math(uint16_t t, uint32_t B, uint32_t C, uint32_t D){
  */
 
 
-void sha1_process_message_block(sha1_context *ctx){
-  uint16_t t;             /* Loop counter        */
-  uint32_t temp;          /* Temporary word value*/
-  uint32_t W[80];         /* Word sequence       */
-  uint32_t A, B, C, D, E; /* Word buffers        */
-  const uint32_t K[] = {0x5A827999, 0x6ED9EBA1, 0x8F1BBCDC, 0xCA62C1D6};
+static void sha1_process_message_block(sha1_context *ctx){
+    guint16 t;             /* Loop counter        */
+    guint32 temp;          /* Temporary word value*/
+    guint32 W[80];         /* Word sequence       */
+    guint32 A, B, C, D, E; /* Word buffers        */
+    const guint32 K[] = {0x5A827999, 0x6ED9EBA1, 0x8F1BBCDC, 0xCA62C1D6};
   
-  if(ctx->version == xSHA1){
-    for(t = 0; t < 16; t++)  W[t] = xSHA1batoi(ctx->message_block, t * 4);
-    for(t = 16; t < 80; t++) W[t] = xSHA1RoL(1, W[t-3] ^ W[t-8] ^ W[t-14] ^ W[t-16]);
-  }else if(ctx->version == lSHA1){
-    for(t = 0; t < 16; t++)  W[t] = xSHA1batoi(ctx->message_block, t * 4);
-    for(t = 16; t < 80; t++) W[t] = SHA1RoL(1, W[t-3] ^ W[t-8] ^ W[t-14] ^ W[t-16]);
-  }else{
-    for(t = 0; t < 16; t++)  W[t] = SHA1batoi(ctx->message_block, t * 4);
-    for(t = 16; t < 80; t++) W[t] = SHA1RoL(1, W[t-3] ^ W[t-8] ^ W[t-14] ^ W[t-16]);
-  }
+    if(ctx->version == SHA1_TYPE_BROKEN){
+        for(t = 0; t < 16; t++)  W[t] = xSHA1batoi(ctx->message_block, t * 4);
+        for(t = 16; t < 80; t++) W[t] = xSHA1RoL(1, W[t-3] ^ W[t-8] ^ W[t-14] ^ W[t-16]);
+    }else if(ctx->version == SHA1_TYPE_LOCKDOWN){
+        for(t = 0; t < 16; t++)  W[t] = xSHA1batoi(ctx->message_block, t * 4);
+        for(t = 16; t < 80; t++) W[t] = SHA1RoL(1, W[t-3] ^ W[t-8] ^ W[t-14] ^ W[t-16]);
+    }else{
+        for(t = 0; t < 16; t++)  W[t] = SHA1batoi(ctx->message_block, t * 4);
+        for(t = 16; t < 80; t++) W[t] = SHA1RoL(1, W[t-3] ^ W[t-8] ^ W[t-14] ^ W[t-16]);
+    }
   
-  A = ctx->intermediate_hash[0];
-  B = ctx->intermediate_hash[1];
-  C = ctx->intermediate_hash[2];
-  D = ctx->intermediate_hash[3];
-  E = ctx->intermediate_hash[4];
+    A = ctx->intermediate_hash[0];
+    B = ctx->intermediate_hash[1];
+    C = ctx->intermediate_hash[2];
+    D = ctx->intermediate_hash[3];
+    E = ctx->intermediate_hash[4];
   
-  for(t = 0; t < 80; t++){
-    temp = SHA1RoL(5,A) + sha1_math(t, B, C, D) + E + W[t] + K[t / 20];
-    E = D;
-    D = C;
-    C = SHA1RoL(30,B);
-    B = A;
-    A = temp;
-  }
+    for(t = 0; t < 80; t++){
+        temp = SHA1RoL(5,A) + sha1_math(t, B, C, D) + E + W[t] + K[t / 20];
+        E = D;
+        D = C;
+        C = SHA1RoL(30,B);
+        B = A;
+        A = temp;
+    }
   
-  ctx->intermediate_hash[0] += A;
-  ctx->intermediate_hash[1] += B;
-  ctx->intermediate_hash[2] += C;
-  ctx->intermediate_hash[3] += D;
-  ctx->intermediate_hash[4] += E;
+    ctx->intermediate_hash[0] += A;
+    ctx->intermediate_hash[1] += B;
+    ctx->intermediate_hash[2] += C;
+    ctx->intermediate_hash[3] += D;
+    ctx->intermediate_hash[4] += E;
 
-  ctx->message_block_index = 0;
+    ctx->message_block_index = 0;
 }
 
 
@@ -322,47 +323,47 @@ void sha1_process_message_block(sha1_context *ctx){
  *
  */
 
-void sha1_pad_message(sha1_context *ctx){
-  if(ctx->version == xSHA1){
-    while(ctx->message_block_index < 64)
-      ctx->message_block[ctx->message_block_index++] = 0;
-  }else{
-    if (ctx->message_block_index > 55){
-      ctx->message_block[ctx->message_block_index++] = 0x80;
+static void sha1_pad_message(sha1_context *ctx){
+    if(ctx->version == SHA1_TYPE_BROKEN){
+        while(ctx->message_block_index < 64)
+            ctx->message_block[ctx->message_block_index++] = 0;
+    }else{
+        if (ctx->message_block_index > 55){
+            ctx->message_block[ctx->message_block_index++] = 0x80;
   
-      while(ctx->message_block_index < 64)
-        ctx->message_block[ctx->message_block_index++] = 0;
+            while(ctx->message_block_index < 64)
+                ctx->message_block[ctx->message_block_index++] = 0;
     
-      sha1_process_message_block(ctx);
-    }else{
-      ctx->message_block[ctx->message_block_index++] = 0x80;
-    }
+            sha1_process_message_block(ctx);
+        }else{
+            ctx->message_block[ctx->message_block_index++] = 0x80;
+        }
   
-    while(ctx->message_block_index < 56)
-      ctx->message_block[ctx->message_block_index++] = 0;
+        while(ctx->message_block_index < 56)
+            ctx->message_block[ctx->message_block_index++] = 0;
 
-    if(ctx->version == lSHA1){
-      xSHA1itoba(ctx->length_high, ctx->message_block, 60);
-      xSHA1itoba(ctx->length_low,  ctx->message_block, 56);
-    }else{
-      SHA1itoba(ctx->length_high, ctx->message_block, 56);
-      SHA1itoba(ctx->length_low,  ctx->message_block, 60);
+        if(ctx->version == SHA1_TYPE_LOCKDOWN){
+            xSHA1itoba(ctx->length_high, ctx->message_block, 60);
+            xSHA1itoba(ctx->length_low,  ctx->message_block, 56);
+        }else{
+            SHA1itoba(ctx->length_high, ctx->message_block, 56);
+            SHA1itoba(ctx->length_low,  ctx->message_block, 60);
+        }
     }
-  }
-  sha1_process_message_block(ctx);
+    sha1_process_message_block(ctx);
 }
 
 
 
-uint32_t sha1_checksum(uint8_t *data, uint32_t length, uint32_t version){
-  uint8_t digest[SHA1_HASH_SIZE];
-  sha1_context ctx;
-  ctx.version = version;
-  sha1_reset(&ctx);
-  sha1_input(&ctx, data, length);
-  sha1_digest(&ctx, digest);
+guint32 sha1_checksum(guint8 *data, guint32 length, sha1_type version) {
+    guint8 digest[SHA1_HASH_SIZE];
+    sha1_context ctx;
+    ctx.version = version;
+    sha1_reset(&ctx);
+    sha1_input(&ctx, data, length);
+    sha1_digest(&ctx, digest);
   
-  return *((uint32_t*)(&digest[0])) ^ *((uint32_t*)(&digest[4])) ^ 
-     *((uint32_t*)(&digest[8])) ^ *((uint32_t*)(&digest[12])) ^ *((uint32_t*)(&digest[16]));
+    return *((guint32*)(&digest[0])) ^ *((guint32*)(&digest[4])) ^ 
+           *((guint32*)(&digest[8])) ^ *((guint32*)(&digest[12])) ^ *((guint32*)(&digest[16]));
 }
 #endif

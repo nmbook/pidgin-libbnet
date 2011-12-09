@@ -90,15 +90,20 @@ char *bnet_packet_read_cstring(BnetPacket *bnet_packet)
     gsize size = 0;
     char *ret;
     
-    if (bnet_packet->allocd == TRUE) return NULL;
+    if (bnet_packet->allocd == TRUE) {
+        purple_debug_error("bnet", "read cstring fail 1: allocd=true");
+        return NULL;
+    }
     
     if (bnet_packet->len < bnet_packet->pos + 1) {
+        purple_debug_error("bnet", "read cstring fail 2: out of range");
         return NULL;
     }
     
     while (*(bnet_packet->data + bnet_packet->pos + size) != 0) {
         size++;
         if (bnet_packet->len < bnet_packet->pos + size) {
+            purple_debug_error("bnet", "read cstring fail 3: out of range");
             return NULL;
         }
     }
@@ -108,6 +113,8 @@ char *bnet_packet_read_cstring(BnetPacket *bnet_packet)
     ret = g_strdup((char *)(bnet_packet->data + bnet_packet->pos));
     
     bnet_packet->pos += size + 1;
+    
+    //purple_debug_info("bnet", "read cstring success: %s (length: %d; %d)\n", ret, size, strlen(ret));
     
     return ret;
 }

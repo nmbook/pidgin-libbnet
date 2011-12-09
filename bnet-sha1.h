@@ -42,49 +42,47 @@
 #ifndef _SHA1_H_
 #define _SHA1_H_
 
-#include <ctype.h>
-#include "stdint.h"
+#include <glib.h>
+//#include Mstdint.h"
 
 #ifndef _SHA_enum_
 #define _SHA_enum_
-enum{
-    shaSuccess = 0,
-    shaNull,            /* Null pointer parameter */
-    shaInputTooLong,    /* input data too long */
-    shaStateError       /* called Input after Result */
-};
+typedef enum {
+    SHA1_RESULT_SUCCESS = 0,
+    SHA1_RESULT_NULL,            /* Null pointer parameter */
+    SHA1_RESULT_INPUT_TOO_LONG,    /* input data too long */
+    SHA1_RESULT_STATE_ERROR       /* called Input after Result */
+} sha1_result;
 #endif
 
 #define SHA1_HASH_SIZE 20
 
-typedef enum{
-  SHA1,
-  xSHA1,
-  lSHA1,
-  wSHA1,
-  MAX = 0xffffffff
-}SHA1_t;
+typedef enum {
+    SHA1_TYPE_NORMAL, /* used in most b.net things */
+    SHA1_TYPE_BROKEN, /* used by the Old Logon System */
+    SHA1_TYPE_LOCKDOWN /* used in the lockdown version check */
+} sha1_type;
+
 /*
  *  This structure will hold context information for the SHA-1
  *  hashing operation
  */
-
-typedef struct sha1_context{
-  uint32_t      intermediate_hash[SHA1_HASH_SIZE / 4]; /* Message Digest                   */
-  uint32_t      length_low;                            /* Message length in bits           */
-  uint32_t      length_high;                           /* Message length in bits           */
-  int_least16_t message_block_index;                   /* Index into message block array   */
-  uint8_t       message_block[64];                     /* 512-bit message blocks           */
-  uint8_t       computed;                              /* Is the digest computed?          */
-  uint8_t       corrupted;                             /* Is the message digest corrupted? */
-  SHA1_t        version;                               /* What version of SHA1 is this?    */
+typedef struct {
+    guint32 intermediate_hash[SHA1_HASH_SIZE / 4]; /* Message Digest                   */
+    guint32 length_low;                            /* Message length in bits           */
+    guint32 length_high;                           /* Message length in bits           */
+    gint16 message_block_index;                   /* Index into message block array   */
+    guint8 message_block[64];                     /* 512-bit message blocks           */
+    guint8 computed;                              /* Is the digest computed?          */
+    guint8 corrupted;                             /* Is the message digest corrupted? */
+    sha1_type version;                               /* What version of SHA1 is this?    */
 } sha1_context;
 
 /* Function Prototypes */
 
-int sha1_reset(sha1_context *);
-int sha1_input(sha1_context *, const uint8_t *, uint32_t);
-int sha1_digest(sha1_context *, uint8_t *);
-uint32_t sha1_checksum(uint8_t *data, uint32_t length, uint32_t version);
+sha1_result sha1_reset(sha1_context *);
+sha1_result sha1_input(sha1_context *, const guint8 *, guint32);
+sha1_result sha1_digest(sha1_context *, guint8 *);
+guint32 sha1_checksum(guint8 *data, guint32 length, guint32 version);
 
 #endif

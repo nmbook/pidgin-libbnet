@@ -22,6 +22,20 @@
 
 #include "bnet.h"
 
+// DEBUG: print the current F L
+static void print_f_l(BnetConnectionData *bnet)
+{
+    GList *el = bnet->friends_list;
+    int i = 0;
+    while (el != NULL) {
+        BnetFriendInfo *bfi = el->data;
+        
+        i++;
+        purple_debug_info("bnet", "%d: %s status: %d\n", i, bfi->account, bfi->status);
+        el = g_list_next(el);
+    }
+}
+
 static void bnet_channel_user_free(BnetChannelUser *bcu)
 {
     if (bcu != NULL) {
@@ -93,6 +107,7 @@ static void bnet_connect(PurpleAccount *account, gboolean do_register)
     }
     bnet->crev_complete = FALSE;
     bnet->is_online = FALSE;
+    bnet->account_data = NULL;
     bnet->lookup_user = NULL;
     bnet->lookup_info = NULL;
     
@@ -225,7 +240,7 @@ static int bnls_send_REQUESTVERSIONBYTE(BnetConnectionData *bnet)
 {
     BnetPacket *pkt = NULL;
     int ret = -1;
-    BnetGameType game;
+    BnetGameType game = 0;
     
     guint32 product_id = bnet->product_id;
     
@@ -258,7 +273,7 @@ static void bnls_input_cb(gpointer data, gint source, PurpleInputCondition cond)
 {
     PurpleConnection *gc = data;
     BnetConnectionData *bnet = NULL;
-    int len;
+    int len = 0;
     
     if (gc == NULL) return;
     
@@ -303,9 +318,9 @@ static void bnls_input_cb(gpointer data, gint source, PurpleInputCondition cond)
 
 static void bnls_read_input(BnetConnectionData *bnet, int len)
 {
-    guint8 *this_start;
-    guint8 this_id;
-    guint16 this_len;
+    guint8 *this_start = NULL;
+    guint8 this_id = 0;
+    guint16 this_len = 0;
     guint16 inbuftouse = 0;
 
     bnet->account->gc->last_received = time(NULL);
@@ -365,7 +380,7 @@ static void bnls_recv_REQUESTVERSIONBYTE(BnetConnectionData *bnet, BnetPacket *p
     guint32 product_id = bnet_packet_read_dword(pkt);
     PurpleAccount *account = bnet->account;
     PurpleConnection *gc = account->gc;
-    PurpleProxyConnectData *conn_data;
+    PurpleProxyConnectData *conn_data = NULL;
     
     if (product_id != 0) {
         guint32 version_code = bnet_packet_read_dword(pkt);
@@ -393,8 +408,11 @@ static void bnls_recv_VERSIONCHECKEX2(BnetConnectionData *bnet, BnetPacket *pkt)
 {
     //
     guint32 success = bnet_packet_read_dword(pkt);
-    guint32 exe_version, exe_checksum, cookie, version_code;
-    char *exe_info;
+    guint32 exe_version = 0;
+    guint32 exe_checksum = 0;
+    guint32 cookie = 0;
+    guint32 version_code = 0;
+    char *exe_info = NULL;
     
     bnet->crev_complete = TRUE;
     
@@ -509,7 +527,7 @@ static int bnet_send_ENTERCHAT(BnetConnectionData *bnet)
 {
     BnetPacket *pkt = NULL;
     int ret = -1;
-    guint16 zero = 0;
+    guint8 zero = 0;
     
     pkt = bnet_packet_create(BNET_PACKET_BNCS);
     bnet_packet_insert(pkt, bnet->username, strlen(bnet->username) + 1);
@@ -580,7 +598,7 @@ static int bnet_send_CHATCOMMAND(BnetConnectionData *bnet, const char *command)
     return ret;
 }
 
-static int bnet_send_LEAVECHAT(BnetConnectionData *bnet)
+/*static int bnet_send_LEAVECHAT(BnetConnectionData *bnet)
 {
     BnetPacket *pkt = NULL;
     int ret = -1;
@@ -590,7 +608,7 @@ static int bnet_send_LEAVECHAT(BnetConnectionData *bnet)
     ret = bnet_packet_send(pkt, BNET_SID_LEAVECHAT, bnet->sbnet.fd);
     
     return ret;
-}
+}*/
 
 static int bnet_send_LOGONRESPONSE2(BnetConnectionData *bnet)
 {
@@ -604,7 +622,7 @@ static int bnet_send_LOGONRESPONSE2(BnetConnectionData *bnet)
     guint namelen = strlen(username);
     guint passlen = strlen(password);
     
-    sha.version = xSHA1;
+    sha.version = SHA1_TYPE_BROKEN;
     sha1_reset(&sha);
     sha1_input(&sha, (guint8 *)password, passlen);
     sha1_digest(&sha, h1);
@@ -637,7 +655,7 @@ static int bnet_send_CREATEACCOUNT2(BnetConnectionData *bnet)
     guint namelen = strlen(username);
     guint passlen = strlen(password);
     
-    sha.version = xSHA1;
+    sha.version = SHA1_TYPE_BROKEN;
     sha1_reset(&sha);
     sha1_input(&sha, (const guint8 *)password, passlen);
     sha1_digest(&sha, h1);
@@ -671,7 +689,7 @@ static int bnet_send_READUSERDATA(BnetConnectionData *bnet,
     int ret = -1;
     int account_count = 1;
     int key_count = g_strv_length(keys);
-    int i;
+    int i = 0;
     
     pkt = bnet_packet_create(BNET_PACKET_BNCS);
     bnet_packet_insert(pkt, &account_count, BNET_SIZE_DWORD);
@@ -790,8 +808,7 @@ static int bnet_send_AUTH_CHECK(BnetConnectionData *bnet,
     guint32 key_count = 0;
     guint32 key_spawn = 0;
     const char *key_owner = purple_account_get_string(bnet->account, "key_owner", "");
-    BnetKey keys[2];
-    BnetKey *pkeys = keys;
+    BnetKey *keys = NULL;
     int i = 0;
     gboolean keys_are_valid = FALSE;
     
@@ -823,7 +840,7 @@ static int bnet_send_AUTH_CHECK(BnetConnectionData *bnet,
             break;
     }
     
-    pkeys = g_new0(BnetKey, 2);
+    keys = g_new0(BnetKey, 2);
     
     keys_are_valid = bnet_key_decode(keys, key_count,
         bnet->client_cookie, bnet->server_cookie,
@@ -857,7 +874,7 @@ static int bnet_send_AUTH_CHECK(BnetConnectionData *bnet,
     bnet_packet_insert(pkt, exe_info, strlen(exe_info) + 1);
     bnet_packet_insert(pkt, key_owner, strlen(key_owner) + 1); 
     
-    g_free(pkeys);
+    g_free(keys);
     
     ret = bnet_packet_send(pkt, BNET_SID_AUTH_CHECK, bnet->sbnet.fd);
     
@@ -870,6 +887,8 @@ static int bnet_send_AUTH_ACCOUNTLOGON(BnetConnectionData *bnet, char *A)
     int ret = -1;
     
     char *username = bnet->username;
+    
+    g_return_val_if_fail(username != NULL, -1);
     
     pkt = bnet_packet_create(BNET_PACKET_BNCS);
     bnet_packet_insert(pkt, A, 32);
@@ -910,7 +929,17 @@ static void bnet_account_logon(BnetConnectionData *bnet)
     if (bnet->nls_revision == 0) {
         bnet_send_LOGONRESPONSE2(bnet);
     } else {
-        bnls_send_CHOOSENLSREVISION(bnet);
+        if (FALSE) { // BNLS NLS/SRP
+            bnls_send_CHOOSENLSREVISION(bnet);
+        } else { // local NLS/SRP
+            const char *username = bnet->username;
+            const char *password = purple_account_get_password(bnet->account);
+            
+            gchar A[32];
+            bnet->account_data = srp_init(username, password);
+            srp_get_A(bnet->account_data, A);
+            bnet_send_AUTH_ACCOUNTLOGON(bnet, A);
+        }
     }
 }
 
@@ -965,7 +994,7 @@ static void bnet_input_cb(gpointer data, gint source, PurpleInputCondition cond)
 {
     PurpleConnection *gc = data;
     BnetConnectionData *bnet = gc->proto_data;
-    int len;
+    int len = 0;
     
     if (bnet == NULL || bnet->magic != BNET_UDP_SIG) return;
     
@@ -996,9 +1025,10 @@ static void bnet_input_cb(gpointer data, gint source, PurpleInputCondition cond)
 
 static void bnet_read_input(BnetConnectionData *bnet, int len)
 {
-    guint8 *this_start;
-    guint8 this_hdr, this_id;
-    guint16 this_len;
+    guint8 *this_start = NULL;
+    guint8 this_hdr = 0;
+    guint8 this_id = 0;
+    guint16 this_len = 0;
     guint16 inbuftouse = 0;
 
     bnet->account->gc->last_received = time(NULL);
@@ -1041,7 +1071,7 @@ static void bnet_recv_ENTERCHAT(BnetConnectionData *bnet, BnetPacket *pkt)
 
 static void bnet_recv_GETCHANNELLIST(BnetConnectionData *bnet, BnetPacket *pkt)
 {
-    char *channel;
+    char *channel = NULL;
     
     while (TRUE) {
         channel = bnet_packet_read_cstring(pkt);
@@ -1052,20 +1082,56 @@ static void bnet_recv_GETCHANNELLIST(BnetConnectionData *bnet, BnetPacket *pkt)
     bnet->channel_list = g_list_reverse(bnet->channel_list);
 }
 
+static char *bnet_locale_to_utf8(char *input)
+{
+    char *output = NULL;
+    
+    // no error
+    if (input == NULL) return g_strdup("");
+    
+    if (g_utf8_validate(input, -1, NULL)) {
+        return g_strdup(input);
+    } else {
+        GError *err = NULL;
+        output = g_locale_to_utf8(input, -1, NULL, NULL, &err);
+        if (err != NULL) {
+            purple_debug_error("bnet", "Unable to convert to UTF-8: %s\n", err->message);
+            g_error_free(err);
+            return g_strdup("(there was an error reading UTF-8)");
+        }
+    }
+    
+    return output;
+}
+
+static char *bnet_locale_from_utf8(char *input)
+{
+    GError *err = NULL;
+    char *output = g_locale_from_utf8(input, -1, NULL, NULL, &err);
+    if (err != NULL) {
+        purple_debug_error("bnet", "Unable to convert from UTF-8: %s\n", err->message);
+        g_error_free(err);
+        return g_strdup("(there was an error reading UTF-8)");
+    }
+    
+    return output;
+}
+
 static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
 {
-    BnetChatEventID id;
-    BnetChatEventFlags flags;
-    gint32 ping;
-    char *who;
-    char *what;
+    BnetChatEventID id = 0;
+    BnetChatEventFlags flags = 0;
+    gint32 ping = 0;
+    char *who = NULL;
+    char *what = NULL;
     
     PurpleConnection *gc = bnet->account->gc;
     PurpleConversation *conv = NULL;
     PurpleConvChat *chat = NULL;
     int chat_id = 0;
-    const char *who_n;
-    const char *norm;
+    const char *who_n = NULL;
+    const char *norm = NULL;
+    char *what_utf = NULL;
     
     if (!bnet->is_online) {
         PurplePresence *pres = NULL;
@@ -1100,6 +1166,8 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
     
     who_n = g_strdup(bnet_d2_normalize(bnet->account, who));
     
+    what_utf = bnet_locale_to_utf8(what);
+    
     switch (id) {
         case BNET_EID_SHOWUSER:
         {
@@ -1108,7 +1176,6 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                 who_n, flags, ping, what);
             
             li = g_list_find_custom(bnet->channel_users, who_n, bnet_channel_user_compare);
-            purple_debug_info("bnet", "%d\n", (int)li);
             if (li != NULL) {
                 // user stats update
                 BnetChannelUser *bcu = li->data;
@@ -1144,14 +1211,14 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
         }
         case BNET_EID_JOIN:
         {
-            BnetChannelUser *bcu;
+            BnetChannelUser *bcu = NULL;
             
             purple_debug_info("bnet", "USER JOINED %s %x %dms: %s\n",
-                who_n, flags, ping, what);
+                who_n, flags, ping, what_utf);
             
             bcu = g_new0(BnetChannelUser, 1);
             bcu->username = g_strdup(who_n);
-            bcu->stats_data = g_strdup(what);
+            bcu->stats_data = g_strdup(what_utf);
             bcu->flags = flags;
             bcu->ping = ping;
             bcu->hidden = FALSE;
@@ -1166,7 +1233,7 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
         }
         case BNET_EID_LEAVE:
             purple_debug_info("bnet", "USER PARTED %s %x %dms: %s\n",
-                who_n, flags, ping, what);
+                who_n, flags, ping, what_utf);
             
             if (chat != NULL) {
                 GList *li = g_list_find_custom(bnet->channel_users, who_n, bnet_channel_user_compare);
@@ -1182,10 +1249,10 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
             gboolean prpl_level_ignore = FALSE;
             
             purple_debug_info("bnet", "USER WHISPER %s %x %dms: %s\n",
-                who_n, flags, ping, what);
+                who_n, flags, ping, what_utf);
             
-            if (strlen(what) > 0) {
-                GError *e = NULL;
+            if (strlen(what_utf) > 0) {
+                GError *err = NULL;
                 GMatchInfo *mi = NULL;
                 GRegex *regex = NULL;
                 const char *who_gaten = bnet_gateway_normalize(bnet->account, who_n);
@@ -1194,11 +1261,12 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                 // MUTUAL FRIEND STATUS //
                 char *regex_str = g_strdup_printf("Your friend %s (?:has entered Battle\\.net|has exited Battle\\.net|entered a (?:.+) game called (?:.+))\\.", g_regex_escape_string(who_gaten, -1));
                     
-                regex = g_regex_new(regex_str, 0, 0, &e);
+                regex = g_regex_new(regex_str, 0, 0, &err);
                 
-                if (regex == NULL) {
-                    purple_debug_warning("bnet", "regex create failed: %s\n", e->message);
-                } else if (g_regex_match(regex, what, 0, &mi) &&
+                if (err != NULL) {
+                    purple_debug_warning("bnet", "regex create failed: %s\n", err->message);
+                    g_error_free(err);
+                } else if (g_regex_match(regex, what_utf, 0, &mi) &&
                            purple_account_get_bool(bnet->account, "hidemutual", TRUE)) {
                     prpl_level_ignore = TRUE;
                 }
@@ -1207,7 +1275,7 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
             }
             
             if (!prpl_level_ignore) {
-                serv_got_im(gc, who_n, purple_markup_escape_text(what, strlen(what)),
+                serv_got_im(gc, who_n, purple_markup_escape_text(what_utf, strlen(what_utf)),
                     PURPLE_MESSAGE_RECV, time(NULL));
             }
             
@@ -1223,21 +1291,21 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
         }
         case BNET_EID_TALK:
             purple_debug_info("bnet", "USER TALK %s %x %dms: %s\n",
-                who_n, flags, ping, what);
-                
+                who_n, flags, ping, what_utf);
+            
             serv_got_chat_in(gc, bnet->channel_id, who_n, PURPLE_MESSAGE_RECV,
-                purple_markup_escape_text(what, strlen(what)), time(NULL));
+                purple_markup_escape_text(what_utf, strlen(what_utf)), time(NULL));
             break;
         case BNET_EID_BROADCAST:
             purple_debug_info("bnet", "BROADCAST %s %x %dms: %s\n",
-                who, flags, ping, what);
+                who, flags, ping, what_utf);
             break;
         case BNET_EID_CHANNEL:
         {
             gboolean this_firstjoin = FALSE;
             
             purple_debug_info("bnet", "JOIN CHANNEL %s %x %dms: %s\n",
-                who, flags, ping, what);
+                who, flags, ping, what_utf);
             
             if (bnet->first_join) {
                 bnet->first_join = FALSE;
@@ -1255,7 +1323,7 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                 bnet->channel_users = NULL;
             }
             
-            norm = bnet_normalize(bnet->account, what);
+            norm = bnet_normalize(bnet->account, what_utf);
             chat_id = g_str_hash(norm);
             
             // TODO: get rid of this dumb code
@@ -1266,16 +1334,16 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
             }
             
             bnet->channel_id = chat_id;
-            bnet->channel_name = g_strdup(what);
+            bnet->channel_name = g_strdup(what_utf);
             bnet->channel_flags = flags;
             if (!this_firstjoin) {
-                serv_got_joined_chat(gc, chat_id, what);
+                serv_got_joined_chat(gc, chat_id, what_utf);
             }
             break;
         }
         case BNET_EID_USERFLAGS:
             purple_debug_info("bnet", "USER FLAG UPDATE %s %x %dms: %s\n",
-                who_n, flags, ping, what);
+                who_n, flags, ping, what_utf);
             
             if (chat != NULL) {
                 GList *li = g_list_find_custom(bnet->channel_users, who_n, bnet_channel_user_compare);
@@ -1283,6 +1351,8 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                     BnetChannelUser *bcu = li->data;
                     bcu->flags = flags;
                     bcu->ping = ping;
+                    // intentional: stats should not be read as UTF-8.
+                    // Diablo II statstrings will be affected. what used instead of what_utf.
                     if (strlen(what) > 0) {
                         bcu->stats_data = g_strdup(what);
                     }
@@ -1294,7 +1364,7 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
             break;
         case BNET_EID_WHISPERSENT:
             purple_debug_info("bnet", "YOU WHISPER %s %x %dms: %s\n",
-                who_n, flags, ping, what);
+                who_n, flags, ping, what_utf);
             
             if (bnet->last_sent_to != NULL) {
                 bnet->awaiting_whisper_confirm = FALSE;
@@ -1303,19 +1373,19 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
             break;
         case BNET_EID_CHANNELFULL:
             purple_debug_info("bnet", "CHANNEL IS FULL %s %x %dms: %s\n",
-                who, flags, ping, what);
+                who, flags, ping, what_utf);
                 
             purple_serv_got_join_chat_failed(gc, bnet->join_attempt);
             break;
         case BNET_EID_CHANNELDOESNOTEXIST:
             purple_debug_info("bnet", "CHANNEL DOES NOT EXIST %s %x %dms: %s\n",
-                who, flags, ping, what);
+                who, flags, ping, what_utf);
                 
             purple_serv_got_join_chat_failed(gc, bnet->join_attempt);
             break;
         case BNET_EID_CHANNELRESTRICTED:
             purple_debug_info("bnet", "CHANNEL IS RESTRICTED %s %x %dms: %s\n",
-                who, flags, ping, what);
+                who, flags, ping, what_utf);
                 
             purple_serv_got_join_chat_failed(gc, bnet->join_attempt);
             break;
@@ -1324,21 +1394,22 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
             gboolean handled = FALSE;
             
             purple_debug_info("bnet", "BNET INFO %s %x %dms: %s\n",
-                who, flags, ping, what);
+                who, flags, ping, what_utf);
             
-            if (strlen(what) > 0) {
-                GError *e = NULL;
+            if (strlen(what_utf) > 0) {
+                GError *err = NULL;
                 GMatchInfo *mi = NULL;
                 GRegex *regex = NULL;
                 
                 ////////////////////
                 // WHOIS RESPONSE //
                 regex = g_regex_new(
-                    "(?:You are |)(\\S+)(?:,| is) using (.+) in (.+)\\.", 0, 0, &e);
+                    "(?:You are |)(\\S+)(?:,| is) using (.+) in (.+)\\.", 0, 0, &err);
                 
-                if (regex == NULL) {
-                    purple_debug_warning("bnet", "regex create failed: %s\n", e->message);
-                } else if (g_regex_match(regex, what, 0, &mi)) {
+                if (err != NULL) {
+                    purple_debug_warning("bnet", "regex create failed: %s\n", err->message);
+                    g_error_free(err);
+                } else if (g_regex_match(regex, what_utf, 0, &mi)) {
                     PurpleBuddy *b;
                     
                     gchar *whois_user = g_match_info_fetch(mi, 1);
@@ -1381,18 +1452,19 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                 g_match_info_free(mi);
                 g_regex_unref(regex);
                 
-                e = NULL; mi = NULL;
+                err = NULL; mi = NULL;
                 
                 /////////////////////////
                 // WHOIS AWAY RESPONSE //
                 ///////////////////////////
                 // WHISPER AWAY RESPONSE //
                 regex = g_regex_new(
-                    "(?:You are|(\\S+) is) away \\((.+)\\)", 0, 0, &e);
+                    "(?:You are|(\\S+) is) away \\((.+)\\)", 0, 0, &err);
                 
-                if (regex == NULL) {
-                    purple_debug_warning("bnet", "regex create failed: %s\n", e->message);
-                } else if (g_regex_match(regex, what, 0, &mi)) {
+                if (err != NULL) {
+                    purple_debug_warning("bnet", "regex create failed: %s\n", err->message);
+                    g_error_free(err);
+                } else if (g_regex_match(regex, what_utf, 0, &mi)) {
                     PurpleBuddy *b;
                     
                     gchar *away_user = g_match_info_fetch(mi, 1);
@@ -1410,7 +1482,7 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                     if (b != NULL) {
                         BnetFriendInfo *bfi = purple_buddy_get_protocol_data(b);
                         if (bfi != NULL) {
-                            bfi->stored_status = away_msg;
+                            bfi->stored_status = g_strdup(away_msg);
                             if (bfi->automated_lookup) {
                                 handled = TRUE;
                                 bfi->automated_lookup = FALSE;
@@ -1418,7 +1490,7 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                         }
                         
                         purple_prpl_got_user_status(bnet->account, away_user_n,
-                                BNET_STATUS_AWAY, "message", away_msg, NULL);
+                                BNET_STATUS_AWAY, "message", g_strdup(away_msg), NULL);
                     }
                     
                     if (!handled && bnet->lookup_user != NULL) {
@@ -1461,16 +1533,17 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                 g_match_info_free(mi);
                 g_regex_unref(regex);
                 
-                e = NULL; mi = NULL;
+                err = NULL; mi = NULL;
                 
                 ////////////////////////
                 // WHOIS DND RESPONSE //
                 regex = g_regex_new(
-                    "(?:You are|(\\S+) is) refusing messages \\((.+)\\)", 0, 0, &e);
+                    "(?:You are|(\\S+) is) refusing messages \\((.+)\\)", 0, 0, &err);
                 
-                if (regex == NULL) {
-                    purple_debug_warning("bnet", "regex create failed: %s\n", e->message);
-                } else if (g_regex_match(regex, what, 0, &mi)) {
+                if (err != NULL) {
+                    purple_debug_warning("bnet", "regex create failed: %s\n", err->message);
+                    g_error_free(err);
+                } else if (g_regex_match(regex, what_utf, 0, &mi)) {
                     PurpleBuddy *b;
                     
                     gchar *dnd_user = g_match_info_fetch(mi, 1);
@@ -1488,7 +1561,7 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                     if (b != NULL) {
                         BnetFriendInfo *bfi = purple_buddy_get_protocol_data(b);
                         if (bfi != NULL) {
-                            bfi->stored_status = dnd_msg;
+                            bfi->stored_status = g_strdup(dnd_msg);
                             if (bfi->automated_lookup) {
                                 handled = TRUE;
                                 bfi->automated_lookup = FALSE;
@@ -1496,7 +1569,7 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                         }
                         
                         purple_prpl_got_user_status(bnet->account, dnd_user_n,
-                                BNET_STATUS_DND, "message", dnd_msg, NULL);
+                                BNET_STATUS_DND, "message", g_strdup(dnd_msg), NULL);
                     }
                     
                     if (!handled && bnet->lookup_user != NULL) {
@@ -1520,18 +1593,19 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                 g_match_info_free(mi);
                 g_regex_unref(regex);
                 
-                e = NULL; mi = NULL;
+                err = NULL; mi = NULL;
                 
                 ///////////////////
                 // AWAY RESPONSE //
                 ////////////////////////
                 // STILL AWAY WARNING //
                 regex = g_regex_new(
-                    "You are (still|now|no longer) marked as (?:being |)away\\.", 0, 0, &e);
+                    "You are (still|now|no longer) marked as (?:being |)away\\.", 0, 0, &err);
                 
-                if (regex == NULL) {
-                    purple_debug_warning("bnet", "regex create failed: %s\n", e->message);
-                } else if (g_regex_match(regex, what, 0, &mi)) {
+                if (err != NULL) {
+                    purple_debug_warning("bnet", "regex create failed: %s\n", err->message);
+                    g_error_free(err);
+                } else if (g_regex_match(regex, what_utf, 0, &mi)) {
                     gchar *away_state_string = g_match_info_fetch(mi, 1);
                     
                     if (strcmp(away_state_string, "still") == 0) {
@@ -1543,7 +1617,7 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                                 PurpleConvIm *im = purple_conversation_get_im_data(conv);
                                 if (im) {
                                     handled = TRUE;
-                                    purple_conv_im_write(im, "Battle.net", what, PURPLE_MESSAGE_SYSTEM, time(NULL));
+                                    purple_conv_im_write(im, "Battle.net", what_utf, PURPLE_MESSAGE_SYSTEM, time(NULL));
                                 }
                             }
                         }
@@ -1561,16 +1635,17 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                 g_match_info_free(mi);
                 g_regex_unref(regex);
                 
-                e = NULL; mi = NULL;
+                err = NULL; mi = NULL;
                 
                 //////////////////
                 // DND RESPONSE //
                 regex = g_regex_new(
-                    "Do Not Disturb mode (engaged|cancelled)\\.", 0, 0, &e);
+                    "Do Not Disturb mode (engaged|cancelled)\\.", 0, 0, &err);
                 
-                if (regex == NULL) {
-                    purple_debug_warning("bnet", "regex create failed: %s\n", e->message);
-                } else if (g_regex_match(regex, what, 0, &mi)) {
+                if (err != NULL) {
+                    purple_debug_warning("bnet", "regex create failed: %s\n", err->message);
+                    g_error_free(err);
+                } else if (g_regex_match(regex, what_utf, 0, &mi)) {
                     gchar *dnd_state_string = g_match_info_fetch(mi, 1);
                     bnet->is_dnd = (strcmp(dnd_state_string, "engaged") == 0);
                     
@@ -1584,20 +1659,21 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                 g_match_info_free(mi);
                 g_regex_unref(regex);
                 
-                e = NULL; mi = NULL;
+                err = NULL; mi = NULL;
                 
                 ///////////////////////
                 // WHISPER DND ERROR //
                 regex = g_regex_new(
-                    "(\\S+) is unavailable \\((.+)\\)", 0, 0, &e);
+                    "(\\S+) is unavailable \\((.+)\\)", 0, 0, &err);
                 
                 if (regex == NULL) {
-                    purple_debug_warning("bnet", "regex create failed: %s\n", e->message);
-                } else if (g_regex_match(regex, what, 0, &mi)) {
+                    purple_debug_warning("bnet", "regex create failed: %s\n", err->message);
+                    g_error_free(err);
+                } else if (g_regex_match(regex, what_utf, 0, &mi)) {
                     if (bnet->last_sent_to != NULL) {
                         handled = TRUE;
-                        if (!purple_conv_present_error(bnet->last_sent_to, bnet->account, what)) {
-                            purple_notify_error(gc, "Do not disturb", what,
+                        if (!purple_conv_present_error(bnet->last_sent_to, bnet->account, what_utf)) {
+                            purple_notify_error(gc, "Do not disturb", what_utf,
                                 g_strdup_printf("%s did not receive your whisper.", bnet->last_sent_to));
                         }
                         
@@ -1607,7 +1683,7 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                 g_match_info_free(mi);
                 g_regex_unref(regex);
                 
-                e = NULL; mi = NULL;
+                err = NULL; mi = NULL;
                 
                 ////////////////////////
                 // UNHANDLED EID_INFO //
@@ -1616,16 +1692,16 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                         PurpleConversation *conv = bnet->last_command_conv;
                         PurpleConvIm *im = purple_conversation_get_im_data(conv);
                         if (im) {
-                            purple_conv_im_write(im, "Battle.net", what, PURPLE_MESSAGE_SYSTEM, time(NULL));
+                            purple_conv_im_write(im, "Battle.net", what_utf, PURPLE_MESSAGE_SYSTEM, time(NULL));
                         } else if (chat) {
-                            purple_conv_chat_write(chat, "Battle.net", what, PURPLE_MESSAGE_SYSTEM, time(NULL));
+                            purple_conv_chat_write(chat, "Battle.net", what_utf, PURPLE_MESSAGE_SYSTEM, time(NULL));
                         } else {
-                            purple_notify_info(gc, "Information", what, NULL);
+                            purple_notify_info(gc, "Information", what_utf, NULL);
                         }
                     } else if (chat) {
-                        purple_conv_chat_write(chat, "Battle.net", what, PURPLE_MESSAGE_SYSTEM, time(NULL));
+                        purple_conv_chat_write(chat, "Battle.net", what_utf, PURPLE_MESSAGE_SYSTEM, time(NULL));
                     } else {
-                        bnet->welcome_msgs = g_list_append(bnet->welcome_msgs, what);
+                        bnet->welcome_msgs = g_list_append(bnet->welcome_msgs, what_utf);
                     }
                 }
             }
@@ -1635,11 +1711,11 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
         {
             gboolean handled = FALSE;
             purple_debug_info("bnet", "BNET ERROR %s %x %dms: %s\n",
-                who, flags, ping, what);
+                who, flags, ping, what_utf);
             
             ////////////////////////
             // WHISPERS AND WHOIS //
-            if (strcmp(what, "That user is not logged on.") == 0) {
+            if (strcmp(what_utf, "That user is not logged on.") == 0) {
                 if (bnet->lookup_user != NULL) {
                     handled = TRUE;
                     if (!bnet->lookup_info) {
@@ -1657,8 +1733,8 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                 
                 if (!handled && bnet->last_sent_to != NULL) {
                     handled = TRUE;
-                    if (!purple_conv_present_error(bnet->last_sent_to, bnet->account, what)) {
-                        purple_notify_error(gc, "Not logged in", what,
+                    if (!purple_conv_present_error(bnet->last_sent_to, bnet->account, what_utf)) {
+                        purple_notify_error(gc, "Not logged in", what_utf,
                             g_strdup_printf("%s did not receive your whisper.", bnet->last_sent_to));
                     }
                     
@@ -1674,16 +1750,16 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                     PurpleConversation *conv = bnet->last_command_conv;
                     PurpleConvIm *im = purple_conversation_get_im_data(conv);
                     if (im) {
-                        purple_conv_im_write(im, "Battle.net", what, PURPLE_MESSAGE_ERROR, time(NULL));
+                        purple_conv_im_write(im, "Battle.net", what_utf, PURPLE_MESSAGE_ERROR, time(NULL));
                     } else if (chat) {
-                        purple_conv_chat_write(chat, "Battle.net", what, PURPLE_MESSAGE_ERROR, time(NULL));
+                        purple_conv_chat_write(chat, "Battle.net", what_utf, PURPLE_MESSAGE_ERROR, time(NULL));
                     } else {
-                        purple_notify_info(gc, "Error", what, NULL);
+                        purple_notify_info(gc, "Error", what_utf, NULL);
                     }
                 } else if (chat) {
-                    purple_conv_chat_write(chat, "Battle.net", what, PURPLE_MESSAGE_ERROR, time(NULL));
+                    purple_conv_chat_write(chat, "Battle.net", what_utf, PURPLE_MESSAGE_ERROR, time(NULL));
                 } else {
-                    purple_notify_error(gc, "Error", what, NULL);
+                    purple_notify_error(gc, "Error", what_utf, NULL);
                 }
             }
             break;
@@ -1691,14 +1767,14 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
         case BNET_EID_EMOTE:
         {
             purple_debug_info("bnet", "USER EMOTE %s %x %dms: %s\n",
-                who_n, flags, ping, what);
+                who_n, flags, ping, what_utf);
 
             serv_got_chat_in(gc, bnet->channel_id, who_n, 
                 ((strcmp(bnet->unique_username, who_n) == 0) ?
                 PURPLE_MESSAGE_SEND : PURPLE_MESSAGE_RECV),
                 g_strdup_printf("/me %s",
-                    ((strlen(what) == 0) ? " " :
-                    purple_markup_escape_text(what, strlen(what)))),
+                    ((strlen(what_utf) == 0) ? " " :
+                    purple_markup_escape_text(what_utf, strlen(what_utf)))),
                 time(NULL));
             break;
         }
@@ -1706,6 +1782,7 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
     
     g_free(who);
     g_free(what);
+    g_free(what_utf);
 }
 
 static void bnet_recv_MESSAGEBOX(BnetConnectionData *bnet, BnetPacket *pkt)
@@ -1765,7 +1842,8 @@ static void bnet_recv_READUSERDATA(BnetConnectionData *bnet, BnetPacket *pkt)
                     bnet_profile_show_write_dialog(bnet, psex, page, ploc, pdescr);
                 } else if (bnet->lookup_user != NULL) {
                     int section_count = 0;
-                    char *pstr;
+                    char *pstr = NULL;
+                    char *pstr_utf = NULL;
                     showing_lookup_dialog = TRUE;
                     
                     if (!bnet->lookup_info) {
@@ -1776,35 +1854,43 @@ static void bnet_recv_READUSERDATA(BnetConnectionData *bnet, BnetPacket *pkt)
                     
                     // profile\sex
                     pstr = g_hash_table_lookup(userdata, "profile\\sex");
+                    pstr_utf = bnet_locale_to_utf8(pstr);
                     if (pstr != NULL && strlen(pstr) > 0) {
                         purple_notify_user_info_add_pair(bnet->lookup_info, "Profile sex", 
                             purple_markup_escape_text(pstr, strlen(pstr)));
                         section_count++;
                     }
+                    g_free(pstr_utf);
                     
                     // profile\age
                     pstr = g_hash_table_lookup(userdata, "profile\\age");
+                    pstr_utf = bnet_locale_to_utf8(pstr);
                     if (pstr != NULL && strlen(pstr) > 0) {
                         purple_notify_user_info_add_pair(bnet->lookup_info, "Profile age", 
                             purple_markup_escape_text(pstr, strlen(pstr)));
                         section_count++;
                     }
+                    g_free(pstr_utf);
                     
                     // profile\location
                     pstr = g_hash_table_lookup(userdata, "profile\\location");
+                    pstr_utf = bnet_locale_to_utf8(pstr);
                     if (pstr != NULL && strlen(pstr) > 0) {
                         purple_notify_user_info_add_pair(bnet->lookup_info, "Profile location", 
                             purple_markup_escape_text(pstr, strlen(pstr)));
                         section_count++;
                     }
+                    g_free(pstr_utf);
                     
                     // profile\description
                     pstr = g_hash_table_lookup(userdata, "profile\\description");
+                    pstr_utf = bnet_locale_to_utf8(pstr);
                     if (pstr != NULL && strlen(pstr) > 0) {
                         purple_notify_user_info_add_pair(bnet->lookup_info, "Profile description", 
                             purple_markup_escape_text(pstr, strlen(pstr)));
                         section_count++;
                     }
+                    g_free(pstr_utf);
                     
                     if (section_count == 0) {
                         purple_notify_user_info_add_pair(bnet->lookup_info, "Profile", 
@@ -2007,6 +2093,26 @@ static void bnet_recv_AUTH_INFO(BnetConnectionData *bnet, BnetPacket *pkt)
     bnet->server_cookie = server_cookie;
     bnet->udp_cookie = udp_cookie;
     
+    if (bnet_is_w3(bnet)) {
+        /*gchar *signature;
+        struct sockaddr_in sa;
+        socklen_t sa_len = sizeof(sa);
+        
+        signature = (gchar *)bnet_packet_read(pkt, 128);
+        if (getsockname(bnet->sbnet.fd, &sa, &sa_len) == 0) {
+            int addr = sa.sin_addr;
+            if (srp_check_signature(addr, signature) == FALSE) {
+                purple_debug_warning("bnet", "WarCraft III: Server sent an incorrect server signature for the current Battle.net server IP!\n");
+            } else {
+                purple_debug_info("bnet", "WarCraft III: Validated Battle.net server signature.\n");
+            }
+        } else {
+            purple_debug_warning("bnet", "WarCraft III: Unable to verify server signature for the current Battle.net server IP!\n");
+        }
+        
+        g_free(signature);*/
+    }
+    
     bnls_send_VERSIONCHECKEX2(bnet,
         login_type, server_cookie, udp_cookie, mpq_ft, mpq_fn, checksum_formula);
     
@@ -2110,12 +2216,22 @@ static void bnet_recv_AUTH_ACCOUNTLOGON(BnetConnectionData *bnet, BnetPacket *pk
     switch (result) {
         case BNET_SUCCESS:
         {
-            char *s_and_B = (char *)bnet_packet_read(pkt, 64);
-            
-            bnls_send_LOGONPROOF(bnet, s_and_B);
-            
-            g_free(s_and_B);
-            break;
+            if (FALSE) { // BNLS
+                char *s_and_B = (char *)bnet_packet_read(pkt, 64);
+                
+                bnls_send_LOGONPROOF(bnet, s_and_B);
+                
+                g_free(s_and_B);
+            } else { // local
+                gchar M1[20];
+                gchar *salt = (gchar *)bnet_packet_read(pkt, 32);
+                gchar *B = (gchar *)bnet_packet_read(pkt, 32);
+                srp_get_M1(bnet->account_data, M1, B, salt);
+                bnet_send_AUTH_ACCOUNTLOGONPROOF(bnet, M1);
+                g_free(salt);
+                g_free(B);
+            }
+            return;
         }
         case BNET_AUTH_ACCOUNT_DNE:
             //purple_connection_error_reason (gc,
@@ -2142,6 +2258,10 @@ static void bnet_recv_AUTH_ACCOUNTLOGON(BnetConnectionData *bnet, BnetPacket *pk
             break;
     }
     
+    if (bnet->account_data != NULL) {
+        srp_free(bnet->account_data);
+        bnet->account_data = NULL;
+    }
 }
 
 static void bnet_recv_AUTH_ACCOUNTLOGONPROOF(BnetConnectionData *bnet, BnetPacket *pkt)
@@ -2151,7 +2271,17 @@ static void bnet_recv_AUTH_ACCOUNTLOGONPROOF(BnetConnectionData *bnet, BnetPacke
     PurpleConnection *gc = bnet->account->gc;
     
     switch (result) {
-        case BNET_SUCCESS:
+        case BNET_SUCCESS: {
+            gchar *M2 = (gchar *)bnet_packet_read(pkt, 20);
+            
+            if (srp_check_M2(bnet->account_data, M2) == FALSE) {
+                purple_debug_warning("bnet", "SRP: Server sent an incorrect M[2] value!\n");
+            } else {
+                purple_debug_info("bnet", "SRP: Validated M[2] value.\n");
+            }
+            
+            g_free(M2);
+            
             purple_debug_info("bnet", "Logged in!\n");
             if (bnet->create_if_dne) {
                 purple_connection_update_progress(gc, "Entering chat", BNET_STEP_FINAL, BNET_STEP_COUNT);
@@ -2159,6 +2289,7 @@ static void bnet_recv_AUTH_ACCOUNTLOGONPROOF(BnetConnectionData *bnet, BnetPacke
             
             bnet_enter_chat(bnet);
             break;
+        }
         case BNET_AUTH_ACCOUNT_BADPW:
             purple_connection_error_reason (gc,
                 PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
@@ -2297,19 +2428,57 @@ static void bnet_recv_FRIENDSLIST(BnetConnectionData *bnet, BnetPacket *pkt)
     purple_debug_info("bnet", "%d friends on list\n", fcount);
     
     if (fcount > 0) {
-        BnetFriendInfo *bfi = g_new0(BnetFriendInfo, fcount);
         while (idx < fcount) {
-            bfi[idx].account = bnet_packet_read_cstring(pkt);
-            bfi[idx].status = bnet_packet_read_byte(pkt);
-            bfi[idx].location = bnet_packet_read_byte(pkt);
-            bfi[idx].product = bnet_packet_read_dword(pkt);
-            bfi[idx].location_name = bnet_packet_read_cstring(pkt);
+            BnetFriendInfo *bfi = NULL;
             
-            bnet_friend_update(bnet, idx, &bfi[idx], FALSE);
+            gchar *account_name = bnet_packet_read_cstring(pkt);
+            
+            BnetFriendStatus status = bnet_packet_read_byte(pkt);
+            BnetFriendLocation location = bnet_packet_read_byte(pkt);
+            BnetProductID product_id = bnet_packet_read_dword(pkt);
+            gchar *location_name = bnet_packet_read_cstring(pkt);
+            
+            GList *el = g_list_nth(bnet->friends_list, idx);
+            
+            if (el == NULL) {
+            eleqnull:
+                el = bnet->friends_list;
+                while (el != NULL) {
+                    bfi = (BnetFriendInfo *) el->data;
+                    if (strcmp(account_name, bfi->account) == 0) {
+                        bnet->friends_list = g_list_remove_link(bnet->friends_list, el);
+                        g_list_free_1(el);
+                        break;
+                    }
+                    el = g_list_next(el);
+                }
+                
+                if (el == NULL) {
+                    bfi = g_new0(BnetFriendInfo, 1);
+                    bfi->account = account_name;
+                    bfi->location_name = g_strdup("");
+                }
+                
+                bnet->friends_list = g_list_insert(bnet->friends_list, bfi, idx);
+            } else {
+                bfi = (BnetFriendInfo *) el->data;
+                if (strcmp(bfi->account, account_name) == 0) {
+                    goto eleqnull;
+                }
+            }
+            
+            bnet_friend_update(bnet, idx, bfi, status, location, product_id, location_name);
+            
+            //purple_debug_error("bnet", "Location: %s\n", location_name);
+    
+            g_free(location_name);
             
             idx++;
         }
+        //g_free(bfi);
     }
+    
+    print_f_l(bnet);
 }
 
 static void bnet_recv_FRIENDSUPDATE(BnetConnectionData *bnet, BnetPacket *pkt)
@@ -2317,12 +2486,14 @@ static void bnet_recv_FRIENDSUPDATE(BnetConnectionData *bnet, BnetPacket *pkt)
     guint8 index = bnet_packet_read_byte(pkt);
     BnetFriendInfo *bfi = g_list_nth_data(bnet->friends_list, index);
     
-    bfi->status = bnet_packet_read_byte(pkt);
-    bfi->location = bnet_packet_read_byte(pkt);
-    bfi->product = bnet_packet_read_dword(pkt);
-    bfi->location_name = bnet_packet_read_cstring(pkt);
+    BnetFriendStatus status = bnet_packet_read_byte(pkt);
+    BnetFriendLocation location = bnet_packet_read_byte(pkt);
+    BnetProductID product_id = bnet_packet_read_dword(pkt);
+    gchar *location_name = bnet_packet_read_cstring(pkt);
     
-    bnet_friend_update(bnet, index, bfi, TRUE);
+    bnet_friend_update(bnet, index, bfi, status, location, product_id, location_name);
+    
+    g_free(location_name);
 }
 
 static void bnet_recv_FRIENDSADD(BnetConnectionData *bnet, BnetPacket *pkt)
@@ -2330,25 +2501,42 @@ static void bnet_recv_FRIENDSADD(BnetConnectionData *bnet, BnetPacket *pkt)
     BnetFriendInfo *bfi = g_new0(BnetFriendInfo, 1);
     guint8 index = g_list_length(bnet->friends_list);
     
-    bfi->account = bnet_packet_read_cstring(pkt);
-    bfi->status = bnet_packet_read_byte(pkt);
-    bfi->location = bnet_packet_read_byte(pkt);
-    bfi->product = bnet_packet_read_dword(pkt);
-    bfi->location_name = bnet_packet_read_cstring(pkt);
+    gchar *account_name = bnet_packet_read_cstring(pkt);
     
-    bnet_friend_update(bnet, index, bfi, FALSE);
+    BnetFriendStatus status = bnet_packet_read_byte(pkt);
+    BnetFriendLocation location = bnet_packet_read_byte(pkt);
+    BnetProductID product_id = bnet_packet_read_dword(pkt);
+    gchar *location_name = bnet_packet_read_cstring(pkt);
+    
+    bfi->account = account_name;
+    bfi->status = -1;
+    bfi->location = -1;
+    bfi->product = -1;
+    bfi->location_name = g_strdup("");
+    
+    bnet_friend_update(bnet, index, bfi, status, location, product_id, location_name);
+    
+    g_free(location_name);
+    
+    //g_free(bfi);
 }
 
 static void bnet_recv_FRIENDSREMOVE(BnetConnectionData *bnet, BnetPacket *pkt)
 {
+    BnetFriendInfo *bfi = NULL;
     guint8 index = bnet_packet_read_byte(pkt);
-    BnetFriendInfo *bfi = g_list_nth_data(bnet->friends_list, index);
+    GList *el = g_list_nth(bnet->friends_list, index);
+    
+    g_return_if_fail(el != NULL);
+    
+    bfi = (BnetFriendInfo *) el->data;
     
     purple_buddy_set_protocol_data(bfi->buddy, NULL);
     bnet_friend_info_free(bfi);
     
-    bnet->friends_list = g_list_remove(bnet->friends_list,
-            g_list_nth(bnet->friends_list, index));
+    bnet->friends_list = g_list_remove(bnet->friends_list, el->data);
+    
+    print_f_l(bnet);
 }
 
 static void bnet_recv_FRIENDSPOSITION(BnetConnectionData *bnet, BnetPacket *pkt)
@@ -2359,6 +2547,20 @@ static void bnet_recv_FRIENDSPOSITION(BnetConnectionData *bnet, BnetPacket *pkt)
     
     bnet->friends_list = g_list_remove_link(bnet->friends_list, bfi_link);
     bnet->friends_list = g_list_insert(bnet->friends_list, bfi_link->data, new_index);
+    
+    print_f_l(bnet);
+}
+
+static void bnet_recv_CLANCREATIONINVITATION(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+    /*gint32 cookie = bnet_packet_read_dword(pkt);
+    gint32 clan_tag = bnet_packet_read_dword(pkt);
+    gchar *clan_name = bnet_packet_read_cstring(pkt);
+    GList *invitees = NULL;
+    guint8 invitees_count = bnet_packet_read_byte(pkt);
+    
+    //bnet->
+    g_free(clan_name);*/
 }
 
 static void bnet_parse_packet(BnetConnectionData *bnet, guint8 packet_id, guint8 *packet_start, guint16 packet_len)
@@ -2391,6 +2593,9 @@ static void bnet_parse_packet(BnetConnectionData *bnet, guint8 packet_id, guint8
         case BNET_SID_READUSERDATA:
             bnet_recv_READUSERDATA(bnet, pkt);
             break;
+        case BNET_SID_CREATEACCOUNT2:
+            bnet_recv_CREATEACCOUNT2(bnet, pkt);
+            break;
         case BNET_SID_AUTH_INFO:
             bnet_recv_AUTH_INFO(bnet, pkt);
             break;
@@ -2420,6 +2625,9 @@ static void bnet_parse_packet(BnetConnectionData *bnet, guint8 packet_id, guint8
             break;
         case BNET_SID_FRIENDSPOSITION:
             bnet_recv_FRIENDSPOSITION(bnet, pkt);
+            break;
+        case BNET_SID_CLANCREATIONINVITATION:
+            bnet_recv_CLANCREATIONINVITATION(bnet, pkt);
             break;
         default:
             // unhandled
@@ -2518,6 +2726,7 @@ static PurpleCmdRet bnet_handle_cmd(PurpleConversation *conv, const gchar *cmdwo
     if (!c)
         return PURPLE_CMD_RET_FAILED;
         
+    // TODO: remove this command...
     if (c->id == 10231) {
         bnet_send_WRITEUSERDATA_2(bnet, args[0], args[1]);
         return PURPLE_CMD_RET_OK;
@@ -2710,10 +2919,15 @@ static char *bnet_format_strsec(char *secs_str)
     return g_strdup_printf("%d%s%02d:%02d:%02d", days, days_str, hrs, mins, secs);
 }
 
-static void bnet_friend_update(BnetConnectionData *bnet, int index, BnetFriendInfo *bfi, gboolean replace)
+static void bnet_friend_update(BnetConnectionData *bnet, int index,
+        BnetFriendInfo *bfi, BnetFriendStatus status,
+        BnetFriendLocation location, BnetProductID product_id,
+        const gchar *location_name)
 {
-    PurpleBuddy *buddy;
+    PurpleBuddy *buddy = NULL;
     gboolean whoising = FALSE;  
+    
+    g_return_if_fail(bfi != NULL);
     
     buddy = purple_find_buddy(bnet->account, bfi->account);
     
@@ -2729,13 +2943,19 @@ static void bnet_friend_update(BnetConnectionData *bnet, int index, BnetFriendIn
     purple_buddy_set_protocol_data(buddy, bfi);
     
     bfi->buddy = buddy;
-    
-    if (replace) {
-        bnet->friends_list = g_list_remove(bnet->friends_list,
-                g_list_nth(bnet->friends_list, index));
+            
+    if (bfi->status == status && bfi->location == location &&
+        bfi->product == product_id && strcmp(bfi->location_name, location_name) == 0) {
+        // this friend status unchanged
+        // we're done
+        return;
+    } else {
+        // something changed
+        bfi->status = status;
+        bfi->location = location;
+        bfi->product = product_id;
+        bfi->location_name = g_strdup(location_name);
     }
-    
-    bnet->friends_list = g_list_insert(bnet->friends_list, bfi, index);
     
     if (bfi->location == BNET_FRIEND_LOCATION_OFFLINE) {
         purple_prpl_got_user_status_deactive(bnet->account, bfi->account,
@@ -2770,6 +2990,7 @@ static void bnet_friend_update(BnetConnectionData *bnet, int index, BnetFriendIn
     }
     
     if (whoising) {
+        // TODO: make queue and put this as low priority
         bfi->automated_lookup = TRUE;
         bnet_whois_user(bnet, bfi->account);
     }
@@ -2815,6 +3036,10 @@ static void bnet_close(PurpleConnection *gc)
             g_free(bnet->server);
             bnet->server = NULL;
         }
+        if (bnet->account_data != NULL) {
+            srp_free(bnet->account_data);
+            bnet->account_data = NULL;
+        }
         if (bnet->last_sent_to != NULL) {
             g_free(bnet->last_sent_to);
             bnet->last_sent_to = NULL;
@@ -2834,17 +3059,19 @@ static int bnet_send_raw(PurpleConnection *gc, const char *buf, int len)
     char *mybuf = g_strdup(buf);
     int ret = -1;
     
-    char *msg_s;
+    char *msg_s = NULL;
+    char *msg_locale = NULL;
     
     if (len < strlen(mybuf)) {
         mybuf[len] = '\0'; // end
     }
     
     msg_s = purple_markup_strip_html(mybuf);
+    msg_locale = bnet_locale_from_utf8(msg_s);
     
-    ret = bnet_send_CHATCOMMAND(bnet, msg_s);
+    ret = bnet_send_CHATCOMMAND(bnet, msg_locale);
+    g_free(msg_locale);
     g_free(msg_s);
-    
     g_free(mybuf);
     
     return ret;
