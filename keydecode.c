@@ -652,17 +652,17 @@ gboolean process_w3(CDKeyDecoder *ctx)
         }
 #endif
 
-        ctx->value1 = LSB4(*(uint32_t*) (((char*) values) + 2)) & 0xFFFFFF03;
+        ctx->value1 = LSB4(*(guint32 *) (((char*) values) + 2)) & 0xFFFFFF03;
         
         ctx->w3value2 = g_malloc0(10);
 #if LITTLEENDIAN
-        *((uint16_t*) ctx->w3value2) = MSB2(*((uint16_t*) (((char*) values) + 6)));
-        *((uint32_t*) ((char*) ctx->w3value2 + 2)) = MSB4(*((uint32_t*) (((char*) values) + 8)));
-        *((uint32_t*) ((char*) ctx->w3value2 + 6)) = MSB4(*((uint32_t*) (((char*) values) + 12)));
+        *((guint16 *) ctx->w3value2) = MSB2(*((guint16 *) (((char*) values) + 6)));
+        *((guint32 *) ((char*) ctx->w3value2 + 2)) = MSB4(*((guint32 *) (((char*) values) + 8)));
+        *((guint32 *) ((char*) ctx->w3value2 + 6)) = MSB4(*((guint32 *) (((char*) values) + 12)));
 #else
-        *((uint16_t*) ctx->w3value2) = LSB2(*((uint16_t*) (((char*) values) + 6)));
-        *((uint32_t*) ((char*) ctx->w3value2 + 2)) = LSB4(*((uint32_t*) (((char*) values) + 8)));
-        *((uint32_t*) ((char*) ctx->w3value2 + 6)) = LSB4(*((uint32_t*) (((char*) values) + 12)));
+        *((guint16 *) ctx->w3value2) = LSB2(*((guint16 *) (((char*) values) + 6)));
+        *((guint32 *) ((char*) ctx->w3value2 + 2)) = LSB4(*((guint32 *) (((char*) values) + 8)));
+        *((guint32 *) ((char*) ctx->w3value2 + 6)) = LSB4(*((guint32 *) (((char*) values) + 12)));
 #endif
         return 1;
 }

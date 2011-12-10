@@ -23,6 +23,9 @@
 // libraries
 #include <glib.h>
 
+#include <stdio.h>
+#include <unistd.h>
+#include <ctype.h>
 #include <string.h>
 #include <stdlib.h>
 #ifdef _WIN32

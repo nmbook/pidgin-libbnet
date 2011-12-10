@@ -1,113 +1,155 @@
-#Customisable stuff here
-LINUX32_COMPILER = gcc
-LINUX64_COMPILER = x86_64-pc-linux-gnu-gcc
-WIN32_COMPILER = /usr/bin/i586-mingw32-gcc
-WIN32_WINDRES = i586-mingw32-windres
-WIN32_OBJCOPY = i586-mingw32-objcopy
-#LINUX_ARM_COMPILER = arm-pc-linux-gnu-gcc
-LINUX_ARM_COMPILER = arm-none-linux-gnueabi-gcc
-LINUX_PPC_COMPILER = powerpc-unknown-linux-gnu-gcc
-FREEBSD60_COMPILER = i686-pc-freebsd6.0-gcc
-MACPORT_COMPILER = i686-apple-darwin10-gcc-4.0.1
+# The new makefile for libbnet
+# On Cygwin or Linux:
+#  make
+#  make install
+# This should work on any of these systems:
+#  Cygwin under 32-bit Windows
+#  Cygwin under 32-bit Windows (using WOW64)
+#  Linux x86
+#  Linux x86_64
+#  Tell me if there's a system you want libbnet.so to compile for!
+#  I will add it if libpurple can be compiled there...
 
-LIBPURPLE_CFLAGS = -I/usr/include/libpurple -I/usr/local/include/libpurple -DPURPLE_PLUGINS -DENABLE_NLS -DHAVE_ZLIB
-GLIB_CFLAGS = -I/usr/include/glib-2.0 -I/usr/lib/glib-2.0/include -I/usr/include -I/usr/local/include/glib-2.0 -I/usr/local/lib/glib-2.0/include -I/usr/local/include
-WIN32_DEV_DIR = /root/pidgin/win32-dev
-WIN32_PIDGIN_DIR = /root/pidgin/pidgin-2.3.0_win32
-WIN32_CFLAGS = -I${WIN32_DEV_DIR}/gtk_2_0/include/glib-2.0 -I${WIN32_PIDGIN_DIR}/libpurple/win32 -I${WIN32_DEV_DIR}/gtk_2_0/include -I${WIN32_DEV_DIR}/gtk_2_0/include/glib-2.0 -I${WIN32_DEV_DIR}/gtk_2_0/lib/glib-2.0/include -I/usr/include/json-glib-1.0 -Wno-format
-WIN32_LIBS = -L${WIN32_DEV_DIR}/gtk_2_0/lib -L${WIN32_PIDGIN_DIR}/libpurple -lglib-2.0 -lgobject-2.0 -lintl -lpurple -lws2_32 -L. -lzlib1
-MACPORT_CFLAGS = -I/opt/local/include/libpurple -DPURPLE_PLUGINS -DENABLE_NLS -DHAVE_ZLIB -I/opt/local/include/glib-2.0 -I/opt/local/lib/glib-2.0/include -I/opt/local/include -I/opt/local/include/json-glib-1.0 -arch i386 -arch ppc -dynamiclib -L/opt/local/lib -lpurple -lglib-2.0 -lgobject-2.0 -lintl -lz -isysroot /Developer/SDKs/MacOSX10.4u.sdk -mmacosx-version-min=10.4
-PIDGIN_DIR = /root/pidgin/pidgin-2.7.0
+# modify this to use a different compiler
+CC := gcc
+# modify this to add/remove the -g flag for
+CC_DEBUG := yes
 
-DEB_PACKAGE_DIR = ./debdir
+# OS (operating system, currently either Cygwin or Linux/Other) and OS_64 (is OS 64-bit?)
+UNAME = $(shell uname)
+UNAMER = $(shell uname -r)
+ifeq (,$(findstring CYGWIN,$(UNAME)))
+OS = LinuxOther
+ifeq (,$(findstring x86_64,$(UNAMER)))
+$(info Operating System: Linux x86)
+OS_64 = no
+else
+$(info Operating System: Linux x86_64)
+OS_64 = yes
+endif
+else
+OS = Cygwin
+ifeq (,$(findstring WOW64,$(UNAME)))
+$(info Operating System: Windows 32-bit)
+OS_64 = no
+else
+$(info Operating System: Windows 32-bit WOW64)
+OS_64 = yes
+endif
+endif
 
-BNET_SOURCES = bnet.c
+# tops for -I and -L
+PIDGIN_TREE_TOP := ../../..
+PURPLE_TOP := $(PIDGIN_TREE_TOP)/libpurple
+W32_TOP := $(PIDGIN_TREE_TOP)/../win32-dev
+
+# list of warnings, same as for official Pidgin protocols, except we add:
+# -Wno-multichar
+#   A lot of B.net depends on using constants such as 'WAR3' as "character" constants.
+#   Rather than convert them to hex equivs (would have been error-prone, and left it harder
+#   to look at later), I just added this flag to the compile
+CC_WARNINGS = -Wall -Waggregate-return -Wcast-align -Wdeclaration-after-statement -Werror-implicit-function-declaration -Wextra -Wno-sign-compare -Wno-unused-parameter -Winit-self -Wmissing-declarations -Wmissing-prototypes -Wnested-externs -Wpointer-arith -Wundef -Wno-multichar
+
+ifeq ($(CC_DEBUG),yes)
+CC_DBG = -g
+else
+CC_DBG =
+endif
+
+ifeq ($(OS),Cygwin)
+CC_COMPFLAGS = -mno-cygwin -mms-bitfields -DWIN32_LEAN_AND_MEAN
+else
+CC_COMPFLAGS = -fPIC
+endif
+
+ifeq ($(OS),Cygwin)
+CC_LINKFLAGS = -Wl,--enable-auto-image-base
+else
+CC_LINKFLAGS = -Wl,-soname,$@
+endif
+
+# flags to compile a .c -> .o
+CC_COMPILE = -O2 $(CC_WARNINGS) -pipe $(CC_COMPFLAGS) $(CC_DBG) $(INC_PATHS) -c $(@:%.o=%.c) -o $@
+# flags to link .o's -> .dll or .so
+CC_LINK = -shared $(OBJECTS) $(LIB_PATHS) $(LIBS) $(CC_LINKFLAGS) -o $@
+
+# -I: self, purple, glib, gmp
+ifeq ($(OS),Cygwin)
+INC_PATHS = -I. -I$(PURPLE_TOP) -I$(PURPLE_TOP)/win32 -I$(W32_TOP)/gtk_2_0-2.16/include/glib-2.0 -I$(W32_TOP)/gmp-5.0.1/include
+else
+INC_PATHS = -I. -I$(PURPLE_TOP) -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I/usr/lib/glib-2.0/include -I/usr/include
+endif
+# -L: purple, glib, gmp
+ifeq ($(OS),Cygwin)
+LIB_PATHS = -L$(PURPLE_TOP) -L$(W32_TOP)/gtk_2_0-2.16/lib -L$(W32_TOP)/gmp-5.0.1/lib
+else
+LIB_PATHS = -L$(PURPLE_TOP) -L/usr/lib -L/usr/lib64
+endif
+# -l
+ifeq ($(OS),Cygwin)
+W32_LIBS = -lintl -lws2_32
+else
+W32_LIBS =
+endif
+LIBS = -lpurple -lglib-2.0 -lgmp $(W32_LIBS)
+
+TARGET = libbnet
+SOURCES = bnet.c packets.c srp.c keydecode.c bnet-sha1.c
+OBJECTS = $(SOURCES:%.c=%.o)
 
 #Standard stuff here
-.PHONY: all clean install sourcepackage
+.PHONY: all clean install makedir-win32
 
-all:    libbnet.so libbnet.dll libbnet64.so libbnetarm.so libbnetppc.so installers sourcepackage
+ifeq ($(OS),Cygwin)
+all: $(TARGET).dll
+else
+all: $(TARGET).so
+endif
 
-install:
-	cp libbnet.so /usr/lib/purple-2/
-	cp libbnet64.so /usr/lib64/purple-2/
-	cp libbnetarm.so /usr/lib/pidgin/
-	cp libbnetppc.so /usr/lib/purple-2/
-	cp bnet-16.png /usr/share/pixmaps/pidgin/protocols/16/bnet.png
-	cp bnet-22.png /usr/share/pixmaps/pidgin/protocols/22/bnet.png
-	cp bnet-48.png /usr/share/pixmaps/pidgin/protocols/48/bnet.png
+%.o: %.c
+	$(CC) $(CC_COMPILE)
 
-installers:     pidgin-libbnet-0.7.0.exe pidgin-libbnet.rpm pidgin-libbnet.tar.bz2
+$(TARGET).so $(TARGET).dll: $(OBJECTS)
+	$(CC) $(CC_LINK)
+
+# stops implicit rule spam in make -d
+Makefile: ;
+# stops more implicit rule spam
+%.c: ;
 
 clean:
-	rm -f libbnet.so libbnet.dll libbnet64.so libbnetarm.so libbnetppc.so pidgin-libbnet-0.7.0.exe pidgin-libbnet.rpm pidgin-libbnet.tar.bz2 pidgin-libbnet-source.tar.bz2
-	rm -rf pidgin-libbnet
+	rm *.o
 
-libbnet.macport.so: ${BNET_SOURCES}
-	${MACPORT_COMPILER} ${MACPORT_CFLAGS} -Wall -I. -g -O2 -pipe ${BNET_SOURCES} -o libbnet.macport.so -shared
+ifeq ($(OS),Cygwin)
+ifeq ($(OS_64),yes)
+install: mkdir-win32
+	cp $(TARGET).dll $$APPDATA/.purple/plugins/$(TARGET).dll
+	cp pixmaps/pidgin/protocols/16/bnet.png /cygdrive/c/Program\ Files\ \(x86\)/Pidgin/pixmaps/pidgin/protocols/16/bnet.png
+	cp pixmaps/pidgin/protocols/22/bnet.png /cygdrive/c/Program\ Files\ \(x86\)/Pidgin/pixmaps/pidgin/protocols/22/bnet.png
+	cp pixmaps/pidgin/protocols/48/bnet.png /cygdrive/c/Program\ Files\ \(x86\)/Pidgin/pixmaps/pidgin/protocols/48/bnet.png
+else
+install: mkdir-win32
+	cp $(TARGET).dll $$APPDATA/.purple/plugins/$(TARGET).dll
+	cp pixmaps/pidgin/protocols/16/bnet.png /cygdrive/c/Program\ Files/Pidgin/pixmaps/pidgin/protocols/16/bnet.png
+	cp pixmaps/pidgin/protocols/22/bnet.png /cygdrive/c/Program\ Files/Pidgin/pixmaps/pidgin/protocols/22/bnet.png
+	cp pixmaps/pidgin/protocols/48/bnet.png /cygdrive/c/Program\ Files/Pidgin/pixmaps/pidgin/protocols/48/bnet.png
+endif
+else
+ifeq ($(OS_64),yes)
+install:
+	cp $(TARGET).so /usr/lib64/purple-2/$(TARGET).so
+	cp pixmaps/pidgin/protocols/16/bnet.png /usr/share/pixmaps/pidgin/protocols/16/bnet.png
+	cp pixmaps/pidgin/protocols/22/bnet.png /usr/share/pixmaps/pidgin/protocols/22/bnet.png
+	cp pixmaps/pidgin/protocols/48/bnet.png /usr/share/pixmaps/pidgin/protocols/48/bnet.png
+else
+install:
+	cp $(TARGET).so /usr/lib/purple/$(TARGET).so
+	cp pixmaps/pidgin/protocols/16/bnet.png /usr/share/pixmaps/pidgin/protocols/16/bnet.png
+	cp pixmaps/pidgin/protocols/22/bnet.png /usr/share/pixmaps/pidgin/protocols/22/bnet.png
+	cp pixmaps/pidgin/protocols/48/bnet.png /usr/share/pixmaps/pidgin/protocols/48/bnet.png
+endif
+endif
 
-libbnet.so: ${BNET_SOURCES}
-	${LINUX32_COMPILER} ${LIBPURPLE_CFLAGS} -Wall ${GLIB_CFLAGS} -I. -g -O2 -pipe ${BNET_SOURCES} -o libbnet.so -shared -fPIC -DPIC
-
-libbnetarm.so:      ${BNET_SOURCES}
-	${LINUX_ARM_COMPILER} ${LIBPURPLE_CFLAGS} -Wall ${GLIB_CFLAGS} -I. -g -O2 -pipe ${BNET_SOURCES} -o libbnetarm.so -shared -fPIC -DPIC
-
-libbnet64.so:       ${BNET_SOURCES}
-	${LINUX64_COMPILER} ${LIBPURPLE_CFLAGS} -Wall ${GLIB_CFLAGS} -I. -g -m64 -O2 -pipe ${BNET_SOURCES} -o libbnet64.so -shared -fPIC -DPIC
-
-libbnetppc.so:      ${BNET_SOURCES}
-	${LINUX_PPC_COMPILER} ${LIBPURPLE_CFLAGS} -Wall ${GLIB_CFLAGS} -I. -g -O2 -pipe ${BNET_SOURCES} -o libbnetppc.so -shared -fPIC -DPIC
-
-libbnetmacport.so: ${BNET_SOURCES}
-	${MACPORT_COMPILER} ${MACPORT_CFLAGS} -Wall -I. -g -O2 -pipe ${BNET_SOURCES} -o libbnetmacport.so -shared
-
-#pidgin-libbnet.res:	pidgin-libbnet.rc
-#	${WIN32_WINDRES} $< -O coff -o $@
-
-libbnet.dll:	${BNET_SOURCES} 
-	${WIN32_COMPILER} ${LIBPURPLE_CFLAGS} -Wall -I. -g -O2 -pipe ${BNET_SOURCES}  -o $@ -shared -mno-cygwin ${WIN32_CFLAGS} ${WIN32_LIBS}
-	${WIN32_OBJCOPY} --only-keep-debug $@ $@.dbg
-	${WIN32_OBJCOPY} --strip-debug $@
-	${WIN32_OBJCOPY} --add-gnu-debuglink=$@.dbg $@
-	upx libbnet.dll
-	#pidgin-facebookchat.res
-	#pidgin-facebookchat.res
-
-libbnet-debug.dll:  ${BNET_SOURCES}
-	${WIN32_COMPILER} ${LIBPURPLE_CFLAGS} -Wall -I. -g -O2 -pipe ${BNET_SOURCES}  -o $@ -shared -mno-cygwin ${WIN32_CFLAGS} ${WIN32_LIBS}
-	#pidgin-facebookchat.res
-	#pidgin-facebookchat.res
-
-libbnetbsd60.so:    ${BNET_SOURCES}
-	${FREEBSD60_COMPILER} ${LIBPURPLE_CFLAGS} -Wall ${GLIB_CFLAGS} -I. -g -O2 -pipe ${BNET_SOURCES} -o libbnet.so -shared -fPIC -DPIC
-
-
-#pidgin-facebookchat.exe:	libfacebook.dll
-#	echo "Dont forget to update version number"
-#	makensis facebook.nsi > /dev/null
-	
-#pidgin-facebookchat.deb:	libfacebook.so libfacebookarm.so libfacebook64.so libfacebookppc.so
-#	echo "Dont forget to update version number"
-#	cp libfacebook.so ${DEB_PACKAGE_DIR}/usr/lib/purple-2/
-#	cp libfacebookppc.so ${DEB_PACKAGE_DIR}/usr/lib/purple-2/
-#	cp libfacebook64.so ${DEB_PACKAGE_DIR}/usr/lib64/purple-2/
-#	cp libfacebookarm.so ${DEB_PACKAGE_DIR}/usr/lib/pidgin/
-#	cp facebook16.png ${DEB_PACKAGE_DIR}/usr/share/pixmaps/pidgin/protocols/16/facebook.png
-#	cp facebook22.png ${DEB_PACKAGE_DIR}/usr/share/pixmaps/pidgin/protocols/22/facebook.png
-#	cp facebook48.png ${DEB_PACKAGE_DIR}/usr/share/pixmaps/pidgin/protocols/48/facebook.png
-#	chown -R root:root ${DEB_PACKAGE_DIR}
-#	chmod -R 755 ${DEB_PACKAGE_DIR}
-#	dpkg-deb --build ${DEB_PACKAGE_DIR} $@ > /dev/null
-
-#pidgin-facebookchat.tar.bz2:    pidgin-facebookchat.deb
-#	tar --bzip2 --directory ${DEB_PACKAGE_DIR} -cf $@ usr/
-
-#sourcepackage:  ${FACEBOOK_SOURCES} Makefile facebook16.png facebook22.png facebook48.png COPYING facebook.nsi
-#	tar -cf tmp.tar $^
-#	mkdir pidgin-facebookchat
-#	mv tmp.tar pidgin-facebookchat
-#	tar xvf pidgin-facebookchat/tmp.tar -C pidgin-facebookchat
-#	rm pidgin-facebookchat/tmp.tar
-#	tar --bzip2 -cf pidgin-facebookchat-source.tar.bz2 pidgin-facebookchat
-#	rm -rf pidgin-facebookchat
+mkdir-win32:
+	mkdir $$APPDATA/.purple/plugins
 

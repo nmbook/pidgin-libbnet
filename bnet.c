@@ -410,7 +410,7 @@ static void bnls_recv_VERSIONCHECKEX2(BnetConnectionData *bnet, BnetPacket *pkt)
     guint32 success = bnet_packet_read_dword(pkt);
     guint32 exe_version = 0;
     guint32 exe_checksum = 0;
-    guint32 cookie = 0;
+    //guint32 cookie = 0; - assigned but not used
     guint32 version_code = 0;
     char *exe_info = NULL;
     
@@ -420,7 +420,7 @@ static void bnls_recv_VERSIONCHECKEX2(BnetConnectionData *bnet, BnetPacket *pkt)
         exe_version = bnet_packet_read_dword(pkt);
         exe_checksum = bnet_packet_read_dword(pkt);
         exe_info = bnet_packet_read_cstring(pkt);
-        cookie = bnet_packet_read_dword(pkt);
+        /*cookie = */bnet_packet_read_dword(pkt);
         version_code = bnet_packet_read_dword(pkt);
         bnet->version_code = version_code;
         bnet_send_AUTH_CHECK(bnet,
@@ -2836,7 +2836,7 @@ static char *bnet_format_strftime(char *ftime_str)
     comb = (((guint64)ft.dwHighDateTime) << 32) |
                     ((guint64)ft.dwLowDateTime);
     purple_debug_info("bnet", "ft %d %d\n", ft.dwHighDateTime, ft.dwLowDateTime);
-    purple_debug_info("bnet", "ft %I64d\n", comb);
+    purple_debug_info("bnet", "ft %ld\n", comb);
     //purple_debug_info(
     sec = (comb / FT_SECOND) % 60;
     min = (comb / FT_MINUTE) % 60;
@@ -3390,7 +3390,7 @@ static gboolean bnet_channeldata_user(BnetConnectionData *bnet, const char *who)
     
     char *start; char *loc;
     char *key; char *value;
-    guint32 icon_id;
+    //guint32 icon_id; - assigned but not used
     char *s_clan;
     
     if (li == NULL)
@@ -3502,7 +3502,7 @@ static gboolean bnet_channeldata_user(BnetConnectionData *bnet, const char *who)
             loc++;
             g_ascii_strtod(loc, &loc);
             loc++;
-            icon_id = *((guint32 *)loc);
+            //icon_id = *((guint32 *)loc);
             if (l_rating || l_rank || l_hirating) {
                 key = g_strdup_printf("%s ladder rating", product);
                 value = g_strdup_printf("%d (high: %d)", l_rating, l_hirating);
@@ -3722,7 +3722,7 @@ static gboolean bnet_channeldata_user(BnetConnectionData *bnet, const char *who)
             int i, clan_len;
             if (strlen(loc)) {
                 loc++;
-                icon_id = *((guint32 *)loc);
+                //icon_id = *((guint32 *)loc);
                 loc += 5;
                 level = g_ascii_strtod(loc, &loc);
                 

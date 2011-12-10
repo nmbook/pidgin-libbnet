@@ -17,12 +17,18 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+// PURPLE_PLUGINS
+#ifndef PURPLE_PLUGINS
+#define PURPLE_PLUGINS
+#endif
+
 #ifndef _BNET_H_
 #define _BNET_H_
  
 // libraries
 #include <glib.h>
 
+#include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -46,11 +52,6 @@
 #include "network.h"
 #include "cmds.h"
 #include "request.h"
-
-// PURPLE_PLUGINS
-#ifndef PURPLE_PLUGINS
-#define PURPLE_PLUGINS
-#endif
 
 // prpl data
 #define PROTOCOL_NAME      "bnet"
