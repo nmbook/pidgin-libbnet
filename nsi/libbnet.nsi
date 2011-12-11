@@ -1,4 +1,4 @@
-;NSIS pidgin-libbnet-0.7.2-winnt
+;NSIS pidgin-libbnet-0.8.0-winnt
 
 ;--------------------------------
 ;Include Modern UI
@@ -10,7 +10,7 @@
 
   ;Name and file
   Name "Battle.net Protocol for Pidgin"
-  OutFile "pidgin-libbnet-0.7.2.exe"
+  OutFile "pidgin-libbnet-0.8.0.exe"
 
   ;Default installation folder
   InstallDir "$PROGRAMFILES\Pidgin"
@@ -21,7 +21,7 @@
   ;Request application privileges for Windows Vista
   RequestExecutionLevel admin
   
-  BrandingText "pidgin-libbnet-0.7.2"
+  BrandingText "pidgin-libbnet-0.8.0"
 
 ;--------------------------------
 ;Interface Settings
@@ -72,8 +72,6 @@
 Section "-libbnet" SecLibbnet
 
   SetOutPath "$INSTDIR"
-
-  AddSize 220
   
   IfFileExists "$INSTDIR\pidgin.exe" PidginInstalled
     
@@ -111,6 +109,9 @@ Section "-libbnet" SecLibbnet
   ;save libbnet.dll
   File "/oname=plugins\libbnet.dll" libbnet.dll
   
+  ;save libgmp-10.dll
+  File "/oname=libgmp-10.dll" libgmp-10.dll
+  
   ;save pixmaps
   File "/oname=pixmaps\pidgin\protocols\16\bnet.png" bnet-16.png
   File "/oname=pixmaps\pidgin\protocols\22\bnet.png" bnet-22.png
@@ -141,6 +142,8 @@ Section "Uninstall"
   SetOutPath "$INSTDIR\.."
 
   Delete "plugins\libbnet.dll"
+  
+  Delete "libgmp-10.dll"
   
   Delete "pixmaps\pidgin\protocols\16\bnet.png"
   Delete "pixmaps\pidgin\protocols\22\bnet.png"
