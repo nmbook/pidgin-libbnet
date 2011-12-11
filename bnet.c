@@ -1918,7 +1918,7 @@ static void bnet_recv_READUSERDATA(BnetConnectionData *bnet, BnetPacket *pkt)
                         }
                     
                         purple_notify_user_info_add_pair(bnet->lookup_info, "Account creation time", 
-                            bnet_format_strftime(pstr));
+                            bnet_format_filetime(pstr));
                     }
                     
                     // System\Last Logoff
@@ -1930,7 +1930,7 @@ static void bnet_recv_READUSERDATA(BnetConnectionData *bnet, BnetPacket *pkt)
                         }
                         
                         purple_notify_user_info_add_pair(bnet->lookup_info, "Last logoff time", 
-                            bnet_format_strftime(pstr));
+                            bnet_format_filetime(pstr));
                     }
                     
                     // System\Last Logon
@@ -1942,7 +1942,7 @@ static void bnet_recv_READUSERDATA(BnetConnectionData *bnet, BnetPacket *pkt)
                         }
                         
                         purple_notify_user_info_add_pair(bnet->lookup_info, "Last logon time", 
-                            bnet_format_strftime(pstr));
+                            bnet_format_filetime(pstr));
                     }
                     
                     // System\Time Logged
@@ -2017,7 +2017,9 @@ static void bnet_recv_READUSERDATA(BnetConnectionData *bnet, BnetPacket *pkt)
                             if (strlen(lgame) == 0) {
                                 lgame = "never";
                             } else {
-                                lgame = g_strdup_printf("%s on %s", lgameres, bnet_format_strftime(lgame));
+                                char *tmp = bnet_format_filetime(lgame);
+                                lgame = g_strdup_printf("%s on %s", lgameres, tmp);
+                                g_free(tmp);
                             }
                             
                             purple_notify_user_info_add_pair(bnet->lookup_info,
@@ -2816,85 +2818,46 @@ static double get_tz_bias(void)
     return difftime(t_utc, t_local);
 }
 
-static char *bnet_format_strftime(char *ftime_str)
+static char *bnet_format_time(guint64 unixtime)
 {
-    WINDOWS_FILETIME ft;
-    char *space_loc;
-    guint64 comb;
-    guint32 sec, min, hr, day, mo, yr;
+    time_t ut = 0;
+    struct tm *t = NULL;
     
-    if (strlen(ftime_str) == 0)
-        return "(never)";
+    ut = unixtime;
+    t = localtime(&ut);
+    
+    return g_strdup(asctime(t));
+}
+
+#define FILETIME_TICK 10000000LL
+#define FILETIME_TO_UNIXTIME_DIFF 11644473600LL
+static char *bnet_format_filetime(char *ftime_str)
+{
+    struct FILETIME {
+        guint32 dwHighDateTime;
+        guint32 dwLowDateTime;
+    } ft_parts; // filetime parts
+    guint64 ft; // filetime
+    guint64 ut; // unixtime
+    char *space_loc; // used to parse string
+    
+    if (strlen(ftime_str) == 0) {
+        return g_strdup("(never)");
+    }
     
     purple_debug_info("bnet", "ft %s\n", ftime_str);
-    ft.dwHighDateTime = (guint32)g_ascii_strtod(ftime_str, &space_loc);
-    ft.dwLowDateTime = 0;
+    ft_parts.dwHighDateTime = (guint32)g_ascii_strtod(ftime_str, &space_loc);
+    ft_parts.dwLowDateTime = 0;
     if (space_loc != NULL) {
-        ft.dwLowDateTime = (guint32)g_ascii_strtod(space_loc + 1, NULL);
+        ft_parts.dwLowDateTime = (guint32)g_ascii_strtod(space_loc + 1, NULL);
     }
     
-    comb = (((guint64)ft.dwHighDateTime) << 32) |
-                    ((guint64)ft.dwLowDateTime);
-    purple_debug_info("bnet", "ft %d %d\n", ft.dwHighDateTime, ft.dwLowDateTime);
-    purple_debug_info("bnet", "ft %ld\n", comb);
-    //purple_debug_info(
-    sec = (comb / FT_SECOND) % 60;
-    min = (comb / FT_MINUTE) % 60;
-    hr =  (comb / FT_HOUR) % 24;
-    day = (comb / FT_DAY) + 2;
-    mo = MO_JAN;
-    yr = 1600;
-    while (TRUE) {
-        switch (mo) {
-            case MO_JAN:
-                yr++;
-                if (day <= 31) {
-                    goto end;
-                }
-                day -= 31;
-                break;
-            case MO_FEB:
-            {
-                int daysinf = 28 + ((yr % 4) ? 0 : 1);
-                if (day <= daysinf) {
-                    goto end;
-                }
-                day -= daysinf;
-                break;
-            }
-            case MO_MAR:
-            case MO_MAY:
-            case MO_JUL:
-            case MO_AUG:
-            case MO_OCT:
-                if (day <= 31) {
-                    goto end;
-                }
-                day -= 31;
-                break;
-            case MO_APR:
-            case MO_JUN:
-            case MO_SEP:
-            case MO_NOV:
-                if (day <= 30) {
-                    goto end;
-                }
-                day -= 30;
-                break;
-            case MO_DEC:
-                if (day <= 31) {
-                    goto end;
-                }
-                day -= 31;
-                mo = MO_JAN - 1;
-                break;
-        }
-        mo++;
-        continue;
-        end: break;
-    }
+    ft = (((guint64)ft_parts.dwHighDateTime) << 32) |
+                    ((guint64)ft_parts.dwLowDateTime);
     
-    return g_strdup_printf("%04d/%02d/%02d at %02d:%02d:%02d", yr, (mo + 1), (day + 1), hr, min, sec);
+    ut = (ft / FILETIME_TICK - FILETIME_TO_UNIXTIME_DIFF);
+    
+    return bnet_format_time(ut);
 }
 
 static char *bnet_format_strsec(char *secs_str)
@@ -2910,7 +2873,7 @@ static char *bnet_format_strsec(char *secs_str)
     hrs %= 24;
     
     if (strlen(secs_str) == 0 || secs == 0)
-        return "now";
+        return g_strdup("now");
     
     if (days == 0) days_str = "";
     else if (days == 1) days_str = " day, ";

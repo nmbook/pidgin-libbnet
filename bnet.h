@@ -626,7 +626,8 @@ static gint bnet_channel_user_compare(gconstpointer a, gconstpointer b);
 static PurpleCmdRet bnet_handle_cmd(PurpleConversation *conv, const gchar *cmdword,
                                   gchar **args, gchar **error, void *data);
 static double get_tz_bias(void);
-static char *bnet_format_strftime(char *ftime_str);
+static char *bnet_format_time(guint64 unixtime);
+static char *bnet_format_filetime(char *ftime_str);
 static char *bnet_format_strsec(char *secs_str);
 static void bnet_friend_update(BnetConnectionData *bnet, int index,
         BnetFriendInfo *bfi, BnetFriendStatus status,

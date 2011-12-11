@@ -75,7 +75,7 @@ CC_LINK = -shared $(OBJECTS) $(LIB_PATHS) $(LIBS) $(CC_LINKFLAGS) -o $@
 
 # -I: self, purple, glib, gmp
 ifeq ($(OS),Cygwin)
-INC_PATHS = -I. -I$(PURPLE_TOP) -I$(PURPLE_TOP)/win32 -I$(W32_TOP)/gtk_2_0-2.16/include/glib-2.0 -I$(W32_TOP)/gmp-5.0.1/include
+INC_PATHS = -I. -I$(PURPLE_TOP) -I$(PURPLE_TOP)/win32 -I$(W32_TOP)/gtk_2_0-2.16/include/glib-2.0 -I$(W32_TOP)/gtk_2_0-2.16/lib/glib-2.0/include -I$(W32_TOP)/gmp-5.0.1/include
 else
 INC_PATHS = -I. -I$(PURPLE_TOP) -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I/usr/lib/glib-2.0/include -I/usr/include
 endif
@@ -122,13 +122,13 @@ clean:
 
 ifeq ($(OS),Cygwin)
 ifeq ($(OS_64),yes)
-install: mkdir-win32
+install:
 	cp $(TARGET).dll $$APPDATA/.purple/plugins/$(TARGET).dll
 	cp pixmaps/pidgin/protocols/16/bnet.png /cygdrive/c/Program\ Files\ \(x86\)/Pidgin/pixmaps/pidgin/protocols/16/bnet.png
 	cp pixmaps/pidgin/protocols/22/bnet.png /cygdrive/c/Program\ Files\ \(x86\)/Pidgin/pixmaps/pidgin/protocols/22/bnet.png
 	cp pixmaps/pidgin/protocols/48/bnet.png /cygdrive/c/Program\ Files\ \(x86\)/Pidgin/pixmaps/pidgin/protocols/48/bnet.png
 else
-install: mkdir-win32
+install:
 	cp $(TARGET).dll $$APPDATA/.purple/plugins/$(TARGET).dll
 	cp pixmaps/pidgin/protocols/16/bnet.png /cygdrive/c/Program\ Files/Pidgin/pixmaps/pidgin/protocols/16/bnet.png
 	cp pixmaps/pidgin/protocols/22/bnet.png /cygdrive/c/Program\ Files/Pidgin/pixmaps/pidgin/protocols/22/bnet.png
@@ -149,7 +149,3 @@ install:
 	cp pixmaps/pidgin/protocols/48/bnet.png /usr/share/pixmaps/pidgin/protocols/48/bnet.png
 endif
 endif
-
-mkdir-win32:
-	mkdir $$APPDATA/.purple/plugins
-

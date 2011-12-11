@@ -167,35 +167,12 @@ typedef enum {
 #define BNET_CREATEACC2_EXISTS           BNET_AUTH_ACCOUNT_EXISTS
 #define BNET_CREATEACC2_NOTENOUGHALPHA   0x06
 
-// FILETIMEs
-#define FT_SECOND ((guint64) 10000000)
-#define FT_MINUTE (60 * FT_SECOND)
-#define FT_HOUR   (60 * FT_MINUTE)
-#define FT_DAY    (24 * FT_HOUR)
-#define MO_JAN 0
-#define MO_FEB 1
-#define MO_MAR 2
-#define MO_APR 3
-#define MO_MAY 4
-#define MO_JUN 5
-#define MO_JUL 6
-#define MO_AUG 7
-#define MO_SEP 8
-#define MO_OCT 9
-#define MO_NOV 10
-#define MO_DEC 11
-
 typedef struct {
     guint8 *data;
     guint16 len;
     guint16 pos;
     gboolean allocd;
 } BnetPacket;
-
-typedef struct {
-    guint32 dwLowDateTime;
-    guint32 dwHighDateTime;
-} WINDOWS_FILETIME;
 
 void bnet_packet_free(BnetPacket *bnet_packet);
 gboolean bnet_packet_insert(BnetPacket *bnet_packet, gconstpointer data, const gsize length);
