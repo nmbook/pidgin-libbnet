@@ -77,13 +77,21 @@ CC_LINK = -shared $(OBJECTS) $(LIB_PATHS) $(LIBS) $(CC_LINKFLAGS) -o $@
 ifeq ($(OS),Cygwin)
 INC_PATHS = -I. -I$(PURPLE_TOP) -I$(PURPLE_TOP)/win32 -I$(W32_TOP)/gtk_2_0-2.16/include/glib-2.0 -I$(W32_TOP)/gtk_2_0-2.16/lib/glib-2.0/include -I$(W32_TOP)/gmp-5.0.1/include
 else
-INC_PATHS = -I. -I$(PURPLE_TOP) -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I/usr/lib/glib-2.0/include -I/usr/include
+ifeq ($(OS_64),yes)
+INC_PATHS = -I. -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I/usr/lib/x86_64-linux-gnu/glib-2.0/include -I/usr/include
+else
+INC_PATHS = -I. -I/usr/include/glib-2.0 -I/usr/lib/glib-2.0/include -I/usr/lib/i386-linux-gnu/glib-2.0/include -I/usr/include
+endif
 endif
 # -L: purple, glib, gmp
 ifeq ($(OS),Cygwin)
 LIB_PATHS = -L$(PURPLE_TOP) -L$(W32_TOP)/gtk_2_0-2.16/lib -L$(W32_TOP)/gmp-5.0.1/lib
 else
-LIB_PATHS = -L$(PURPLE_TOP) -L/usr/lib -L/usr/lib64
+ifeq ($(OS_64),yes)
+LIB_PATHS = -L/usr/lib64
+else
+LIB_PATHS = -L/usr/lib
+endif
 endif
 # -l
 ifeq ($(OS),Cygwin)
@@ -123,29 +131,24 @@ clean:
 ifeq ($(OS),Cygwin)
 ifeq ($(OS_64),yes)
 install:
+    mkdir -p $$APPDATA/.purple/plugins
 	cp $(TARGET).dll $$APPDATA/.purple/plugins/$(TARGET).dll
 	cp pixmaps/pidgin/protocols/16/bnet.png /cygdrive/c/Program\ Files\ \(x86\)/Pidgin/pixmaps/pidgin/protocols/16/bnet.png
 	cp pixmaps/pidgin/protocols/22/bnet.png /cygdrive/c/Program\ Files\ \(x86\)/Pidgin/pixmaps/pidgin/protocols/22/bnet.png
 	cp pixmaps/pidgin/protocols/48/bnet.png /cygdrive/c/Program\ Files\ \(x86\)/Pidgin/pixmaps/pidgin/protocols/48/bnet.png
 else
 install:
+    mkdir -p $$APPDATA/.purple/plugins
 	cp $(TARGET).dll $$APPDATA/.purple/plugins/$(TARGET).dll
 	cp pixmaps/pidgin/protocols/16/bnet.png /cygdrive/c/Program\ Files/Pidgin/pixmaps/pidgin/protocols/16/bnet.png
 	cp pixmaps/pidgin/protocols/22/bnet.png /cygdrive/c/Program\ Files/Pidgin/pixmaps/pidgin/protocols/22/bnet.png
 	cp pixmaps/pidgin/protocols/48/bnet.png /cygdrive/c/Program\ Files/Pidgin/pixmaps/pidgin/protocols/48/bnet.png
 endif
 else
-ifeq ($(OS_64),yes)
 install:
-	cp $(TARGET).so /usr/lib64/purple-2/$(TARGET).so
+    mkdir -p ~/.purple/plugins
+	cp $(TARGET).so ~/.purple/plugins/$(TARGET).so
 	cp pixmaps/pidgin/protocols/16/bnet.png /usr/share/pixmaps/pidgin/protocols/16/bnet.png
 	cp pixmaps/pidgin/protocols/22/bnet.png /usr/share/pixmaps/pidgin/protocols/22/bnet.png
 	cp pixmaps/pidgin/protocols/48/bnet.png /usr/share/pixmaps/pidgin/protocols/48/bnet.png
-else
-install:
-	cp $(TARGET).so /usr/lib/purple/$(TARGET).so
-	cp pixmaps/pidgin/protocols/16/bnet.png /usr/share/pixmaps/pidgin/protocols/16/bnet.png
-	cp pixmaps/pidgin/protocols/22/bnet.png /usr/share/pixmaps/pidgin/protocols/22/bnet.png
-	cp pixmaps/pidgin/protocols/48/bnet.png /usr/share/pixmaps/pidgin/protocols/48/bnet.png
-endif
 endif
