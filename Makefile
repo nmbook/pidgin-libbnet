@@ -78,9 +78,9 @@ ifeq ($(OS),Cygwin)
 INC_PATHS = -I. -I$(PURPLE_TOP) -I$(PURPLE_TOP)/win32 -I$(W32_TOP)/gtk_2_0-2.16/include/glib-2.0 -I$(W32_TOP)/gtk_2_0-2.16/lib/glib-2.0/include -I$(W32_TOP)/gmp-5.0.1/include
 else
 ifeq ($(OS_64),yes)
-INC_PATHS = -I. -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I/usr/lib/x86_64-linux-gnu/glib-2.0/include -I/usr/include
+INC_PATHS = -I. -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I/usr/lib/x86_64-linux-gnu/glib-2.0/include -I/usr/include -I/usr/include/libpurple
 else
-INC_PATHS = -I. -I/usr/include/glib-2.0 -I/usr/lib/glib-2.0/include -I/usr/lib/i386-linux-gnu/glib-2.0/include -I/usr/include
+INC_PATHS = -I. -I/usr/include/glib-2.0 -I/usr/lib/glib-2.0/include -I/usr/lib/i386-linux-gnu/glib-2.0/include -I/usr/include -I/usr/include/libpurple
 endif
 endif
 # -L: purple, glib, gmp
