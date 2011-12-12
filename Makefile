@@ -131,14 +131,14 @@ clean:
 ifeq ($(OS),Cygwin)
 ifeq ($(OS_64),yes)
 install:
-    mkdir -p $$APPDATA/.purple/plugins
+	mkdir -p $$APPDATA/.purple/plugins
 	cp $(TARGET).dll $$APPDATA/.purple/plugins/$(TARGET).dll
 	cp pixmaps/pidgin/protocols/16/bnet.png /cygdrive/c/Program\ Files\ \(x86\)/Pidgin/pixmaps/pidgin/protocols/16/bnet.png
 	cp pixmaps/pidgin/protocols/22/bnet.png /cygdrive/c/Program\ Files\ \(x86\)/Pidgin/pixmaps/pidgin/protocols/22/bnet.png
 	cp pixmaps/pidgin/protocols/48/bnet.png /cygdrive/c/Program\ Files\ \(x86\)/Pidgin/pixmaps/pidgin/protocols/48/bnet.png
 else
 install:
-    mkdir -p $$APPDATA/.purple/plugins
+	mkdir -p $$APPDATA/.purple/plugins
 	cp $(TARGET).dll $$APPDATA/.purple/plugins/$(TARGET).dll
 	cp pixmaps/pidgin/protocols/16/bnet.png /cygdrive/c/Program\ Files/Pidgin/pixmaps/pidgin/protocols/16/bnet.png
 	cp pixmaps/pidgin/protocols/22/bnet.png /cygdrive/c/Program\ Files/Pidgin/pixmaps/pidgin/protocols/22/bnet.png
@@ -146,7 +146,7 @@ install:
 endif
 else
 install:
-    mkdir -p ~/.purple/plugins
+	mkdir -p ~/.purple/plugins
 	cp $(TARGET).so ~/.purple/plugins/$(TARGET).so
 	cp pixmaps/pidgin/protocols/16/bnet.png /usr/share/pixmaps/pidgin/protocols/16/bnet.png
 	cp pixmaps/pidgin/protocols/22/bnet.png /usr/share/pixmaps/pidgin/protocols/22/bnet.png
