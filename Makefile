@@ -13,7 +13,7 @@
 # modify this to use a different compiler
 CC := gcc
 # modify this to add/remove the -g flag for
-CC_DEBUG := yes
+CC_DEBUG := no
 
 # OS (operating system, currently either Cygwin or Linux/Other) and OS_64 (is OS 64-bit?)
 UNAME = $(shell uname)
@@ -29,6 +29,7 @@ OS_64 = yes
 endif
 else
 OS = Cygwin
+CC = mingw32-gcc
 ifeq (,$(findstring WOW64,$(UNAME)))
 $(info Operating System: Windows 32-bit)
 OS_64 = no
@@ -57,7 +58,7 @@ CC_DBG =
 endif
 
 ifeq ($(OS),Cygwin)
-CC_COMPFLAGS = -mno-cygwin -mms-bitfields -DWIN32_LEAN_AND_MEAN
+CC_COMPFLAGS = -mms-bitfields -DWIN32_LEAN_AND_MEAN
 else
 CC_COMPFLAGS = -fPIC
 endif
@@ -69,7 +70,7 @@ CC_LINKFLAGS = -Wl,-soname,$@
 endif
 
 # flags to compile a .c -> .o
-CC_COMPILE = -O2 $(CC_WARNINGS) -pipe $(CC_COMPFLAGS) $(CC_DBG) $(INC_PATHS) -c $(@:%.o=%.c) -o $@
+CC_COMPILE = $(CC_WARNINGS) -pipe $(CC_COMPFLAGS) $(CC_DBG) $(INC_PATHS) -c $(@:%.o=%.c) -o $@
 # flags to link .o's -> .dll or .so
 CC_LINK = -shared $(OBJECTS) $(LIB_PATHS) $(LIBS) $(CC_LINKFLAGS) -o $@
 
@@ -102,7 +103,7 @@ endif
 LIBS = -lpurple -lglib-2.0 -lgmp $(W32_LIBS)
 
 TARGET = libbnet
-SOURCES = bnet.c packets.c srp.c keydecode.c bnet-sha1.c
+SOURCES = bnet.c bufferer.c srp.c keydecode.c sha1.c w3clan.c userdata.c
 OBJECTS = $(SOURCES:%.c=%.o)
 
 #Standard stuff here
@@ -126,7 +127,7 @@ Makefile: ;
 %.c: ;
 
 clean:
-	rm *.o
+	rm -f *.o
 
 ifeq ($(OS),Cygwin)
 ifeq ($(OS_64),yes)
