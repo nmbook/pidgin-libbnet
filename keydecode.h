@@ -1,7 +1,8 @@
-/** 
+/**
+ * pidgin-libbnet
  * A Protocol Plugin for Pidgin, allowing emulation of a chat-only client
  * connected to the Battle.net Service.
- * Copyright (C) 2011 Nate Book
+ * Copyright (C) 2011-2012 Nate Book
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -14,11 +15,10 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>
  *
  *
- *
- * Converted from C++ to C for use in Pidgin
+ * Converted from C++ to C for use with this plugin.
  *
  * BNCSutil
  * Battle.Net Utility Library
@@ -63,8 +63,8 @@
 #include "internal.h"
 #endif
 
-#include "bnet-sha1.h"
-#include "packets.h"
+#include "bufferer.h"
+#include "sha1.h"
 
 #define SWAP2(num) ((((num) >> 8) & 0x00FF) | (((num) << 8) & 0xFF00))
 #define SWAP4(num) ((((num) >> 24) & 0x000000FF) | (((num) >> 8) & 0x0000FF00) | (((num) << 8) & 0x00FF0000) | (((num) << 24) & 0xFF000000))
@@ -97,7 +97,7 @@ typedef struct {
     guint32 product_value;
     guint32 public_value;
     guint32 private_value;
-    guint8 key_hash[20];
+    guint8 key_hash[SHA1_HASH_SIZE];
 } BnetKey;
 
 typedef enum {
@@ -127,6 +127,12 @@ typedef struct {
 gboolean bnet_key_decode(BnetKey keys[2], int key_count,
          guint32 client_cookie, guint32 server_cookie,
          const char *key1_string, const char *key2_string);
+gboolean bnet_key_decode_legacy_verify_only(char *key,
+         guint32 client_cookie, guint32 server_cookie,
+         const char *key1_string);
+gboolean bnet_key_decode_legacy(BnetKey *key,
+         guint32 client_cookie, guint32 server_cookie,
+         const char *key1_string);
 void bnet_key_free(CDKeyDecoder *ctx);
 CDKeyDecoder *bnet_key_create_context(const char *cdkey);
 gboolean bnet_is_key_valid(CDKeyDecoder *ctx);
@@ -135,6 +141,8 @@ guint32 bnet_key_get_product(CDKeyDecoder *ctx);
 guint32 bnet_key_get_val1(CDKeyDecoder *ctx);
 guint32 bnet_key_get_val2(CDKeyDecoder *ctx);
 guint32 bnet_key_get_long_val2(CDKeyDecoder *ctx, char* out);
+gsize bnet_key_calculate_hash_legacy(CDKeyDecoder *ctx, const guint32 clientToken,
+      const guint32 serverToken);
 gsize bnet_key_calculate_hash(CDKeyDecoder *ctx, guint32 clientToken,
       guint32 serverToken);
 gsize bnet_key_get_hash(CDKeyDecoder *ctx, guint8* outputBuffer);

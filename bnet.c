@@ -1,7 +1,8 @@
-/** 
+/**
+ * pidgin-libbnet
  * A Protocol Plugin for Pidgin, allowing emulation of a chat-only client
  * connected to the Battle.net Service.
- * Copyright (C) 2011 Nate Book
+ * Copyright (C) 2011-2012 Nate Book
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,7 +24,9 @@
 #include "bnet.h"
 
 // DEBUG: print the current F L
-static void print_f_l(BnetConnectionData *bnet)
+// TODO: remove
+static void
+bnet_print_f_l(BnetConnectionData *bnet)
 {
     GList *el = bnet->friends_list;
     int i = 0;
@@ -36,7 +39,8 @@ static void print_f_l(BnetConnectionData *bnet)
     }
 }
 
-static void bnet_channel_user_free(BnetChannelUser *bcu)
+static void
+bnet_channel_user_free(BnetChannelUser *bcu)
 {
     if (bcu != NULL) {
         if (bcu->username != NULL)
@@ -47,7 +51,8 @@ static void bnet_channel_user_free(BnetChannelUser *bcu)
     }
 }
 
-static void bnet_friend_info_free(BnetFriendInfo *bfi)
+static void
+bnet_friend_info_free(BnetFriendInfo *bfi)
 {
     if (bfi != NULL) {
         if (bfi->account != NULL)
@@ -60,12 +65,48 @@ static void bnet_friend_info_free(BnetFriendInfo *bfi)
     }
 }
 
-static void bnet_buddy_free(PurpleBuddy *buddy)
+static void
+bnet_user_free(BnetUser *bu)
 {
-    bnet_channel_user_free(buddy->proto_data);
+    if (bu != NULL) {
+        switch (bu->type) {
+            case BNET_USER_TYPE_CHANNELUSER:
+                bnet_channel_user_free((BnetChannelUser *)bu);
+                break;
+            case BNET_USER_TYPE_FRIEND:
+                bnet_friend_info_free((BnetFriendInfo *)bu);
+                break;
+            case BNET_USER_TYPE_CLANMEMBER:
+                bnet_clan_member_free((BnetClanMember *)bu);
+                break;
+            default:
+                g_free(bu);
+                break;
+        }
+    }
 }
 
-static void bnet_connect(PurpleAccount *account, gboolean do_register)
+static void
+bnet_buddy_free(PurpleBuddy *buddy)
+{
+    bnet_user_free(buddy->proto_data);
+    g_free(buddy);
+}
+
+static void
+bnet_news_item_free(BnetNewsItem *item)
+{
+    if (item != NULL) {
+        if (item->message != NULL) {
+            g_free(item->message);
+            item->message = NULL;
+        }
+        g_free(item);
+    }
+}
+
+static void
+bnet_connect(PurpleAccount *account, const gboolean do_register)
 {
     // local vars
     PurpleConnection *gc = NULL;
@@ -98,18 +139,26 @@ static void bnet_connect(PurpleAccount *account, gboolean do_register)
     bnet->port = purple_account_get_int(account, "port", BNET_DEFAULT_PORT);
     bnet->bnls_server = g_strdup(purple_account_get_string(account, "bnlsserver", BNET_DEFAULT_BNLSSERVER));
     bnet->bnls_port = BNET_DEFAULT_BNLSPORT;
-    bnet->product_id = *((int *)((void *)
-        purple_account_get_string(bnet->account, "product", "RATS")));
+    bnet->product_id = *((int *)
+        purple_account_get_string(bnet->account, "product", "RATS"));
     if (bnet_is_d2(bnet)) {
         bnet->d2_star = "*";
     } else {
         bnet->d2_star = "";
     }
-    bnet->crev_complete = FALSE;
+    bnet->versioning_system = bnet_get_versioningsystem(bnet);
+    bnet->versioning_complete = FALSE;
+    bnet->logon_system = BNET_LOGON_XSHA1;
     bnet->is_online = FALSE;
+    bnet->sent_enter_channel = FALSE;
     bnet->account_data = NULL;
     bnet->lookup_user = NULL;
     bnet->lookup_info = NULL;
+    bnet->my_accountname = NULL;
+    bnet->my_statstring = NULL;
+    bnet->unique_username = NULL;
+    bnet->clan_info = NULL;
+    bnet->news = NULL;
     
     bnet->create_if_dne = do_register;
     
@@ -130,7 +179,7 @@ static void bnet_connect(PurpleAccount *account, gboolean do_register)
         purple_connection_update_progress(gc, "Connecting to BNLS", BNET_STEP_BNLS, BNET_STEP_COUNT);
     }
     bnls_conn_data = purple_proxy_connect(gc, account, bnet->bnls_server, bnet->bnls_port,
-                 bnls_login_cb, gc);
+                 bnet_bnls_login_cb, gc);
     if (bnls_conn_data == NULL)
     {
         purple_connection_error_reason (gc,
@@ -141,12 +190,14 @@ static void bnet_connect(PurpleAccount *account, gboolean do_register)
     bnet->sbnls.conn_data = bnls_conn_data;
 }
 
-static void bnet_login(PurpleAccount *account)
+static void
+bnet_login(PurpleAccount *account)
 {
     bnet_connect(account, FALSE);
 }
 
-static void bnls_login_cb(gpointer data, gint source, const gchar *error_message)
+static void
+bnet_bnls_login_cb(gpointer data, gint source, const gchar *error_message)
 {
     PurpleConnection *gc = data;
     BnetConnectionData *bnet = gc->proto_data;
@@ -164,25 +215,27 @@ static void bnls_login_cb(gpointer data, gint source, const gchar *error_message
 
     bnet->sbnls.fd = source;
     
-    if (bnls_send_REQUESTVERSIONBYTE(bnet)) {
-        bnet->sbnls.inpa = purple_input_add(bnet->sbnls.fd, PURPLE_INPUT_READ, bnls_input_cb, gc);
+    if (bnet_bnls_send_REQUESTVERSIONBYTE(bnet)) {
+        bnet->sbnls.inpa = purple_input_add(bnet->sbnls.fd, PURPLE_INPUT_READ, bnet_bnls_input_cb, gc);
     }
 }
 
-static int bnls_send_CHOOSENLSREVISION(BnetConnectionData *bnet)
+static int
+bnet_bnls_send_CHOOSENLSREVISION(const BnetConnectionData *bnet)
 {
     BnetPacket *pkt = NULL;
     int ret = -1;
     
     pkt = bnet_packet_create(BNET_PACKET_BNLS);
-    bnet_packet_insert(pkt, &bnet->nls_revision, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, &bnet->logon_system, BNET_SIZE_DWORD);
     
     ret = bnet_packet_send_bnls(pkt, BNET_BNLS_CHOOSENLSREVISION, bnet->sbnls.fd);
     
     return ret;
 }
 
-static int bnls_send_LOGONCHALLENGE(BnetConnectionData *bnet)
+static int
+bnet_bnls_send_LOGONCHALLENGE(const BnetConnectionData *bnet)
 {
     BnetPacket *pkt = NULL;
     int ret = -1;
@@ -201,7 +254,8 @@ static int bnls_send_LOGONCHALLENGE(BnetConnectionData *bnet)
     return ret;
 }
 
-static int bnls_send_LOGONPROOF(BnetConnectionData *bnet, char *s_and_B)
+static int
+bnet_bnls_send_LOGONPROOF(const BnetConnectionData *bnet, const char *s_and_B)
 {
     BnetPacket *pkt = NULL;
     int ret = -1;
@@ -214,7 +268,8 @@ static int bnls_send_LOGONPROOF(BnetConnectionData *bnet, char *s_and_B)
     return ret;
 }
 
-static int bnls_send_VERSIONCHECKEX2(BnetConnectionData *bnet,
+static int
+bnet_bnls_send_VERSIONCHECKEX2(const BnetConnectionData *bnet,
        guint32 login_type, guint32 server_cookie, guint32 udp_cookie,
        guint64 mpq_ft, char *mpq_fn, char *checksum_formula)
 {
@@ -236,13 +291,14 @@ static int bnls_send_VERSIONCHECKEX2(BnetConnectionData *bnet,
     return ret;
 }
 
-static int bnls_send_REQUESTVERSIONBYTE(BnetConnectionData *bnet)
+static int
+bnet_bnls_send_REQUESTVERSIONBYTE(BnetConnectionData *bnet)
 {
     BnetPacket *pkt = NULL;
     int ret = -1;
     BnetGameType game = 0;
     
-    guint32 product_id = bnet->product_id;
+    const guint32 product_id = bnet->product_id;
     
     switch (product_id) {
         default:
@@ -269,7 +325,8 @@ static int bnls_send_REQUESTVERSIONBYTE(BnetConnectionData *bnet)
     return ret;
 }
 
-static void bnls_input_cb(gpointer data, gint source, PurpleInputCondition cond)
+static void
+bnet_bnls_input_cb(gpointer data, gint source, PurpleInputCondition cond)
 {
     PurpleConnection *gc = data;
     BnetConnectionData *bnet = NULL;
@@ -288,35 +345,47 @@ static void bnls_input_cb(gpointer data, gint source, PurpleInputCondition cond)
     if (len < 0 && errno == EAGAIN) {
         return;
     } else if (len < 0) {
+        gchar *tmp = NULL;
         purple_input_remove(bnet->sbnls.inpa);
-        if (bnet->crev_complete == FALSE) {
-            gchar *tmp = g_strdup_printf("Lost connection with BNLS server: %s\n",
+        tmp = g_strdup_printf("Lost connection with BNLS server: %s\n",
                     g_strerror(errno));
+        if (bnet->versioning_complete == FALSE) {
             purple_connection_error_reason (gc,
                 PURPLE_CONNECTION_ERROR_NETWORK_ERROR, tmp);
-            g_free(tmp);
-        } else {
-            close(bnet->sbnls.fd);
+            if (bnet->sbnet.fd > 0) {
+                purple_input_remove(bnet->sbnet.inpa);
+                close(bnet->sbnet.fd);
+                bnet->sbnet.fd = 0;
+            }
         }
-        purple_debug_info("bnet", "BNLS disconnected.\n");
+        purple_debug_info("bnet", tmp);
+            g_free(tmp);
+            close(bnet->sbnls.fd);
+        bnet->sbnls.fd = 0;
         return;
     } else if (len == 0) {
         purple_input_remove(bnet->sbnls.inpa);
-        if (bnet->crev_complete == FALSE) {
+        if (bnet->versioning_complete == FALSE) {
             purple_connection_error_reason (gc,
                 PURPLE_CONNECTION_ERROR_NETWORK_ERROR,
                 "BNLS server closed the connection\n");
-        } else {
-            close(bnet->sbnls.fd);
+            if (bnet->sbnet.fd > 0) {
+                purple_input_remove(bnet->sbnet.inpa);
+                close(bnet->sbnet.fd);
+                bnet->sbnet.fd = 0;
+        }
         }
         purple_debug_info("bnet", "BNLS disconnected.\n");
+        close(bnet->sbnls.fd);
+        bnet->sbnls.fd = 0;
         return;
     }
 
-    bnls_read_input(bnet, len);
+    bnet_bnls_read_input(bnet, len);
 }
 
-static void bnls_read_input(BnetConnectionData *bnet, int len)
+static void
+bnet_bnls_read_input(BnetConnectionData *bnet, int len)
 {
     guint8 *this_start = NULL;
     guint8 this_id = 0;
@@ -334,7 +403,7 @@ static void bnls_read_input(BnetConnectionData *bnet, int len)
         this_len = *((guint16 *)(void *)(this_start + 0));
         inbuftouse += this_len;
         if (inbuftouse <= bnet->sbnls.inbufused) {
-            bnls_parse_packet(bnet, this_id, this_start, this_len);
+            bnet_bnls_parse_packet(bnet, this_id, this_start, this_len);
             this_start += this_len;
         } else break;
     }
@@ -347,16 +416,18 @@ static void bnls_read_input(BnetConnectionData *bnet, int len)
     }
 }
 
-static void bnls_recv_CHOOSENLSREVISION(BnetConnectionData *bnet, BnetPacket *pkt)
+static void
+bnet_bnls_recv_CHOOSENLSREVISION(const BnetConnectionData *bnet, BnetPacket *pkt)
 {
     gboolean result = bnet_packet_read_dword(pkt);
     
     if (result) {
-        bnls_send_LOGONCHALLENGE(bnet);
+        bnet_bnls_send_LOGONCHALLENGE(bnet);
     }
 }
 
-static void bnls_recv_LOGONCHALLENGE(BnetConnectionData *bnet, BnetPacket *pkt)
+static void
+bnet_bnls_recv_LOGONCHALLENGE(const BnetConnectionData *bnet, BnetPacket *pkt)
 {
     char *A = (char *)bnet_packet_read(pkt, 32);
     
@@ -365,16 +436,18 @@ static void bnls_recv_LOGONCHALLENGE(BnetConnectionData *bnet, BnetPacket *pkt)
     g_free(A);
 }
 
-static void bnls_recv_LOGONPROOF(BnetConnectionData *bnet, BnetPacket *pkt)
+static void
+bnet_bnls_recv_LOGONPROOF(const BnetConnectionData *bnet, BnetPacket *pkt)
 {
-    char *M1 = (char *)bnet_packet_read(pkt, 20);
+    char *M1 = (char *)bnet_packet_read(pkt, SHA1_HASH_SIZE);
     
     bnet_send_AUTH_ACCOUNTLOGONPROOF(bnet, M1);
     
     g_free(M1);
 }
 
-static void bnls_recv_REQUESTVERSIONBYTE(BnetConnectionData *bnet, BnetPacket *pkt)
+static void
+bnet_bnls_recv_REQUESTVERSIONBYTE(BnetConnectionData *bnet, BnetPacket *pkt)
 {
     // store version byte
     guint32 product_id = bnet_packet_read_dword(pkt);
@@ -404,7 +477,8 @@ static void bnls_recv_REQUESTVERSIONBYTE(BnetConnectionData *bnet, BnetPacket *p
     bnet->sbnet.conn_data = conn_data;
 }
 
-static void bnls_recv_VERSIONCHECKEX2(BnetConnectionData *bnet, BnetPacket *pkt)
+static void
+bnet_bnls_recv_VERSIONCHECKEX2(BnetConnectionData *bnet, BnetPacket *pkt)
 {
     //
     guint32 success = bnet_packet_read_dword(pkt);
@@ -414,7 +488,7 @@ static void bnls_recv_VERSIONCHECKEX2(BnetConnectionData *bnet, BnetPacket *pkt)
     guint32 version_code = 0;
     char *exe_info = NULL;
     
-    bnet->crev_complete = TRUE;
+    bnet->versioning_complete = TRUE;
     
     if (success == TRUE) {
         exe_version = bnet_packet_read_dword(pkt);
@@ -423,14 +497,21 @@ static void bnls_recv_VERSIONCHECKEX2(BnetConnectionData *bnet, BnetPacket *pkt)
         /*cookie = */bnet_packet_read_dword(pkt);
         version_code = bnet_packet_read_dword(pkt);
         bnet->version_code = version_code;
-        bnet_send_AUTH_CHECK(bnet,
-            exe_version, exe_checksum, exe_info);
+        bnet->client_cookie = g_random_int();
+        if (bnet->versioning_system == BNET_VERSIONING_AUTH) {
+            bnet_send_AUTH_CHECK(bnet,
+                exe_version, exe_checksum, exe_info);
+        } else {
+            bnet_send_REPORTVERSION(bnet,
+                exe_version, exe_checksum, exe_info);
+        }
         
         g_free(exe_info);
     }
 }
 
-static void bnls_parse_packet(BnetConnectionData *bnet, guint8 packet_id, guint8 *packet_start, guint16 packet_len)
+static void
+bnet_bnls_parse_packet(BnetConnectionData *bnet, const guint8 packet_id, const guint8 *packet_start, const guint16 packet_len)
 {
     BnetPacket *pkt = NULL;
     
@@ -440,19 +521,19 @@ static void bnls_parse_packet(BnetConnectionData *bnet, guint8 packet_id, guint8
     
     switch (packet_id) {
         case BNET_BNLS_LOGONCHALLENGE:
-            bnls_recv_LOGONCHALLENGE(bnet, pkt);
+            bnet_bnls_recv_LOGONCHALLENGE(bnet, pkt);
             break;
         case BNET_BNLS_LOGONPROOF:
-            bnls_recv_LOGONPROOF(bnet, pkt);
+            bnet_bnls_recv_LOGONPROOF(bnet, pkt);
             break;
         case BNET_BNLS_REQUESTVERSIONBYTE:
-            bnls_recv_REQUESTVERSIONBYTE(bnet, pkt);
+            bnet_bnls_recv_REQUESTVERSIONBYTE(bnet, pkt);
             break;
         case BNET_BNLS_VERSIONCHECKEX2:
-            bnls_recv_VERSIONCHECKEX2(bnet, pkt);
+            bnet_bnls_recv_VERSIONCHECKEX2(bnet, pkt);
             break;
         case BNET_BNLS_CHOOSENLSREVISION:
-            bnls_recv_CHOOSENLSREVISION(bnet, pkt);
+            bnet_bnls_recv_CHOOSENLSREVISION(bnet, pkt);
             break;
         default:
         {
@@ -465,7 +546,8 @@ static void bnls_parse_packet(BnetConnectionData *bnet, guint8 packet_id, guint8
     bnet_packet_free(pkt);
 }
 
-static void bnet_login_cb(gpointer data, gint source, const gchar *error_message)
+static void
+bnet_login_cb(gpointer data, gint source, const gchar *error_message)
 {
     PurpleConnection *gc = data;
     BnetConnectionData *bnet = gc->proto_data;
@@ -491,27 +573,60 @@ static void bnet_login_cb(gpointer data, gint source, const gchar *error_message
     }
 }
 
-static gboolean bnet_protocol_begin(BnetConnectionData *bnet)
+static gboolean
+bnet_protocol_begin(const BnetConnectionData *bnet)
 {
-    if (bnet_send_protocol_byte(bnet, 0x01) < 0) {
+    if (bnet_send_protocol_byte(bnet, BNET_PROTOCOL_BNCS) < 0) {
         return FALSE;
     }
     
-    if (bnet_send_AUTH_INFO(bnet) < 0) {
-        return FALSE;
+    switch (bnet->versioning_system) {
+        default:
+        case BNET_VERSIONING_AUTH:
+            if (bnet_send_AUTH_INFO(bnet) < 0) {
+                return FALSE;
+            }
+            break;
+        case BNET_VERSIONING_LEGACY2:
+            if (bnet_send_CLIENTID2(bnet) < 0) {
+                return FALSE;
+            }
+            if (bnet_send_LOCALEINFO(bnet) < 0) {
+                return FALSE;
+            }
+            if (bnet_send_STARTVERSIONING(bnet) < 0) {
+                return FALSE;
+            }
+            break;
+        case BNET_VERSIONING_LEGACY:
+            if (bnet_send_CLIENTID(bnet) < 0) {
+                return FALSE;
+            }
+            if (bnet_send_LOCALEINFO(bnet) < 0) {
+                return FALSE;
+            }
+            if (bnet_send_SYSTEMINFO(bnet) < 0) {
+                return FALSE;
+            }
+            if (bnet_send_STARTVERSIONING(bnet) < 0) {
+                return FALSE;
+            }
+            break;
     }
     
     return TRUE;
 }
 
-static int bnet_send_protocol_byte(BnetConnectionData *bnet, int byte)
+static int
+bnet_send_protocol_byte(const BnetConnectionData *bnet, int byte)
 {
     int ret = write(bnet->sbnet.fd, &byte, 1);
     
     return ret;
 }
 
-static int bnet_send_NULL(BnetConnectionData *bnet)
+static int
+bnet_send_NULL(const BnetConnectionData *bnet)
 {
     BnetPacket *pkt = NULL;
     int ret = -1;
@@ -523,7 +638,54 @@ static int bnet_send_NULL(BnetConnectionData *bnet)
     return ret;
 }
 
-static int bnet_send_ENTERCHAT(BnetConnectionData *bnet)
+static int
+bnet_send_STARTVERSIONING(const BnetConnectionData *bnet)
+{
+    BnetPacket *pkt = NULL;
+    int ret = -1;
+    
+    guint32 platform_id = BNET_PLATFORM_IX86;
+    guint32 product_id = bnet->product_id;
+    guint32 version_code = bnet->version_code;
+    guint32 zero = 0;
+    
+    pkt = bnet_packet_create(BNET_PACKET_BNCS);
+    bnet_packet_insert(pkt, &platform_id, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, &product_id, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, &version_code, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, &zero, BNET_SIZE_DWORD);
+    
+    ret = bnet_packet_send(pkt, BNET_SID_STARTVERSIONING, bnet->sbnet.fd);
+    
+    return ret;
+}
+
+static int
+bnet_send_REPORTVERSION(const BnetConnectionData *bnet,
+       guint32 exe_version, guint32 exe_checksum, char *exe_info)
+{
+    BnetPacket *pkt = NULL;
+    int ret = -1;
+    
+    guint32 platform_id = BNET_PLATFORM_IX86;
+    guint32 product_id = bnet->product_id;
+    guint32 version_code = bnet->version_code;
+    
+    pkt = bnet_packet_create(BNET_PACKET_BNCS);
+    bnet_packet_insert(pkt, &platform_id, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, &product_id, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, &version_code, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, &exe_version, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, &exe_checksum, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, exe_info, strlen(exe_info) + 1);
+    
+    ret = bnet_packet_send(pkt, BNET_SID_REPORTVERSION, bnet->sbnet.fd);
+    
+    return ret;
+}
+
+static int
+bnet_send_ENTERCHAT(const BnetConnectionData *bnet)
 {
     BnetPacket *pkt = NULL;
     int ret = -1;
@@ -538,7 +700,8 @@ static int bnet_send_ENTERCHAT(BnetConnectionData *bnet)
     return ret;
 }
 
-static int bnet_send_GETCHANNELLIST(BnetConnectionData *bnet)
+static int
+bnet_send_GETCHANNELLIST(const const BnetConnectionData *bnet)
 {
     BnetPacket *pkt = NULL;
     int ret = -1;
@@ -551,7 +714,8 @@ static int bnet_send_GETCHANNELLIST(BnetConnectionData *bnet)
     return ret;
 }
 
-static int bnet_send_JOINCHANNEL(BnetConnectionData *bnet,
+static int
+bnet_send_JOINCHANNEL(const BnetConnectionData *bnet,
            BnetChannelJoinFlags channel_flags, char *channel)
 {
     BnetPacket *pkt = NULL;
@@ -567,7 +731,8 @@ static int bnet_send_JOINCHANNEL(BnetConnectionData *bnet,
     return ret;
 }
 
-/*static int bnet_queue_CHATCOMMAND(BnetConnectionData *bnet, PurpleConversation *conv,
+/*static int
+bnet_queue_CHATCOMMAND(const BnetConnectionData *bnet, PurpleConversation *conv,
         BnetCommandID cmd, BnetQueueFunc cb, const char *command)
 {
     BnetQueueElement *qel = g_new0(BnetQueueElement, 1);
@@ -585,7 +750,8 @@ static int bnet_send_JOINCHANNEL(BnetConnectionData *bnet,
     bnet_queue(qel);
 }*/
 
-static int bnet_send_CHATCOMMAND(BnetConnectionData *bnet, const char *command)
+static int
+bnet_send_CHATCOMMAND(const BnetConnectionData *bnet, const char *command)
 {
     BnetPacket *pkt = NULL;
     int ret = -1;
@@ -598,7 +764,8 @@ static int bnet_send_CHATCOMMAND(BnetConnectionData *bnet, const char *command)
     return ret;
 }
 
-/*static int bnet_send_LEAVECHAT(BnetConnectionData *bnet)
+static int
+bnet_send_LEAVECHAT(const BnetConnectionData *bnet)
 {
     BnetPacket *pkt = NULL;
     int ret = -1;
@@ -608,9 +775,100 @@ static int bnet_send_CHATCOMMAND(BnetConnectionData *bnet, const char *command)
     ret = bnet_packet_send(pkt, BNET_SID_LEAVECHAT, bnet->sbnet.fd);
     
     return ret;
-}*/
+}
 
-static int bnet_send_LOGONRESPONSE2(BnetConnectionData *bnet)
+static int
+bnet_send_CDKEY(const BnetConnectionData *bnet)
+{
+    BnetPacket *pkt = NULL;
+    int ret = -1;
+    guint32 key_spawn = 0;
+    const char *key_owner = purple_account_get_string(bnet->account, "key_owner", "");
+    BnetKey *keys = NULL;
+    char key_normalized[14];
+    gboolean keys_are_valid = FALSE;
+    
+    if (strlen(key_owner) == 0) {
+        key_owner = bnet->username;
+    }
+    
+    keys = g_new0(BnetKey, 1);
+    
+    keys_are_valid = bnet_key_decode_legacy_verify_only(key_normalized,
+        bnet->client_cookie, bnet->server_cookie,
+        purple_account_get_string(bnet->account, "key1", ""));
+    
+    if (!keys_are_valid) {
+        char *tmp = NULL;
+        tmp = g_strdup("The provided CD-key could not be decoded.");
+        purple_connection_error_reason (bnet->account->gc,
+            PURPLE_CONNECTION_ERROR_INVALID_SETTINGS,
+            tmp);
+        g_free(tmp);
+        return -1;
+    }
+    
+    pkt = bnet_packet_create(BNET_PACKET_BNCS);
+    bnet_packet_insert(pkt, &key_spawn, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, key_normalized, 14);
+    bnet_packet_insert(pkt, key_owner, strlen(key_owner) + 1); 
+    
+    g_free(keys);
+    
+    ret = bnet_packet_send(pkt, BNET_SID_CDKEY, bnet->sbnet.fd);
+    
+    return ret;
+}
+
+static int
+bnet_send_CDKEY2(const BnetConnectionData *bnet)
+{
+    BnetPacket *pkt = NULL;
+    int ret = -1;
+    guint32 key_spawn = 0;
+    const char *key_owner = purple_account_get_string(bnet->account, "key_owner", "");
+    BnetKey *keys = NULL;
+    gboolean keys_are_valid = FALSE;
+    
+    if (strlen(key_owner) == 0) {
+        key_owner = bnet->username;
+    }
+    
+    keys = g_new0(BnetKey, 1);
+    
+    keys_are_valid = bnet_key_decode_legacy(keys,
+        bnet->client_cookie, bnet->server_cookie,
+        purple_account_get_string(bnet->account, "key1", ""));
+    
+    if (!keys_are_valid) {
+        char *tmp = NULL;
+        tmp = g_strdup("The provided CD-key could not be decoded.");
+        purple_connection_error_reason (bnet->account->gc,
+            PURPLE_CONNECTION_ERROR_INVALID_SETTINGS,
+            tmp);
+        g_free(tmp);
+        return -1;
+    }
+    
+    pkt = bnet_packet_create(BNET_PACKET_BNCS);
+    bnet_packet_insert(pkt, &key_spawn, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, &keys->length, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, &keys->product_value, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, &keys->public_value, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, &bnet->server_cookie, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, &bnet->client_cookie, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, keys->key_hash, SHA1_HASH_SIZE);
+    bnet_packet_insert(pkt, key_owner, strlen(key_owner) + 1); 
+    
+    g_free(keys);
+    
+    ret = bnet_packet_send(pkt, BNET_SID_CDKEY2, bnet->sbnet.fd);
+    
+    return ret;
+}
+
+static int
+bnet_send_LOGONRESPONSE2(const BnetConnectionData *bnet)
 {
     BnetPacket *pkt = NULL;
     int ret = -1;
@@ -643,7 +901,8 @@ static int bnet_send_LOGONRESPONSE2(BnetConnectionData *bnet)
     return ret;
 }
 
-static int bnet_send_CREATEACCOUNT2(BnetConnectionData *bnet)
+static int
+bnet_send_CREATEACCOUNT2(const BnetConnectionData *bnet)
 {
     BnetPacket *pkt = NULL;
     int ret = -1;
@@ -669,7 +928,118 @@ static int bnet_send_CREATEACCOUNT2(BnetConnectionData *bnet)
     return ret;
 }
 
-static int bnet_send_PING(BnetConnectionData *bnet, guint32 cookie)
+static int
+bnet_send_LOCALEINFO(const BnetConnectionData *bnet)
+{
+    BnetPacket *pkt = NULL;
+    int ret = -1;
+    
+    guint32 tz_bias = 0;
+    guint32 system_lang = 1033;
+    guint32 product_lang = 1033; // TODO: find pidgin's locale?!
+    char *lang_abbr = "ENU";
+    char *country_abbr = "USA";
+    char *country = "United States";
+    char *one = "1";
+    time_t t_local, t_utc;
+    struct tm *tm_utc = NULL;
+    guint64 ft_local, ft_utc;
+    
+    t_local = time(NULL);
+    tm_utc = gmtime(&t_local);
+    t_utc = mktime(tm_utc);
+    
+    tz_bias = (guint32)(difftime(t_utc, t_local) / 60.0f);
+    ft_utc = bnet_get_filetime(t_utc);
+    ft_local = bnet_get_filetime(t_local);
+    
+    purple_debug_info("bnet", "tz bias %d\n", tz_bias);
+    
+    pkt = bnet_packet_create(BNET_PACKET_BNCS);
+    bnet_packet_insert(pkt, &ft_utc, BNET_SIZE_FILETIME);
+    bnet_packet_insert(pkt, &ft_local, BNET_SIZE_FILETIME);
+    bnet_packet_insert(pkt, &tz_bias, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, &system_lang, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, &product_lang, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, &product_lang, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, lang_abbr, strlen(lang_abbr) + 1);
+    bnet_packet_insert(pkt, one, strlen(one) + 1);
+    bnet_packet_insert(pkt, country_abbr, strlen(country_abbr) + 1);
+    bnet_packet_insert(pkt, country, strlen(country) + 1);
+    ret = bnet_packet_send(pkt, BNET_SID_LOCALEINFO, bnet->sbnet.fd);
+    
+    return ret;
+}
+
+static int
+bnet_send_CLIENTID2(const BnetConnectionData *bnet)
+{
+    BnetPacket *pkt = NULL;
+    int ret = -1;
+    int zero = 0;
+    const gchar *user = g_get_user_name();
+    const gchar *host = g_get_host_name();
+    
+    purple_debug_info("bnet", "user %s @ host %s\n", user, host);
+    
+    pkt = bnet_packet_create(BNET_PACKET_BNCS);
+    bnet_packet_insert(pkt, &zero, BNET_SIZE_DWORD); // server version 0 or 1
+    bnet_packet_insert(pkt, &zero, BNET_SIZE_DWORD); // reg authority
+    bnet_packet_insert(pkt, &zero, BNET_SIZE_DWORD); // reg version
+    bnet_packet_insert(pkt, &zero, BNET_SIZE_DWORD); // account number
+    bnet_packet_insert(pkt, &zero, BNET_SIZE_DWORD); // registration token
+    bnet_packet_insert(pkt, host, strlen(host) + 1); // LAN computer name
+    bnet_packet_insert(pkt, user, strlen(user) + 1); // LAN user name
+    
+    ret = bnet_packet_send(pkt, BNET_SID_CLIENTID2, bnet->sbnet.fd);
+    
+    return ret;
+}
+
+static int
+bnet_send_CLIENTID(const BnetConnectionData *bnet)
+{
+    BnetPacket *pkt = NULL;
+    int ret = -1;
+    int zero = 0;
+    const gchar *user = g_get_user_name();
+    const gchar *host = g_get_host_name();
+    
+    purple_debug_info("bnet", "user %s @ host %s\n", user, host);
+    
+    pkt = bnet_packet_create(BNET_PACKET_BNCS);
+    bnet_packet_insert(pkt, &zero, BNET_SIZE_DWORD); // reg version
+    bnet_packet_insert(pkt, &zero, BNET_SIZE_DWORD); // reg authority
+    bnet_packet_insert(pkt, &zero, BNET_SIZE_DWORD); // account number
+    bnet_packet_insert(pkt, &zero, BNET_SIZE_DWORD); // registration token
+    bnet_packet_insert(pkt, host, strlen(host) + 1); // LAN computer name
+    bnet_packet_insert(pkt, user, strlen(user) + 1); // LAN user name
+    
+    ret = bnet_packet_send(pkt, BNET_SID_CLIENTID, bnet->sbnet.fd);
+    
+    return ret;
+}
+
+static int
+bnet_send_SYSTEMINFO(const BnetConnectionData *bnet)
+{
+    BnetPacket *pkt = NULL;
+    int ret = -1;
+    int zero = 0;
+    int i;
+    
+    pkt = bnet_packet_create(BNET_PACKET_BNCS);
+    for (i = 0; i < 7; i++) {
+        bnet_packet_insert(pkt, &zero, BNET_SIZE_DWORD);
+    }
+    
+    ret = bnet_packet_send(pkt, BNET_SID_SYSTEMINFO, bnet->sbnet.fd);
+    
+    return ret;
+}
+
+static int
+bnet_send_PING(const BnetConnectionData *bnet, guint32 cookie)
 {
     BnetPacket *pkt = NULL;
     int ret = -1;
@@ -682,7 +1052,8 @@ static int bnet_send_PING(BnetConnectionData *bnet, guint32 cookie)
     return ret;
 }
 
-static int bnet_send_READUSERDATA(BnetConnectionData *bnet,
+static int
+bnet_send_READUSERDATA(const BnetConnectionData *bnet,
     int request_cookie, const char *username, char **keys)
 {
     BnetPacket *pkt = NULL;
@@ -704,7 +1075,8 @@ static int bnet_send_READUSERDATA(BnetConnectionData *bnet,
     return ret;
 }
 
-static int bnet_send_WRITEUSERDATA(BnetConnectionData *bnet,
+static int
+bnet_send_WRITEUSERDATA(const BnetConnectionData *bnet,
     const char *sex, const char *age, const char *location, const char *description)
 {
     BnetPacket *pkt = NULL;
@@ -734,7 +1106,8 @@ static int bnet_send_WRITEUSERDATA(BnetConnectionData *bnet,
     return ret;
 }
 
-static int bnet_send_WRITEUSERDATA_2(BnetConnectionData *bnet,
+static int
+bnet_send_WRITEUSERDATA_2(const BnetConnectionData *bnet,
     const char *key, const char *val)
 {
     BnetPacket *pkt = NULL;
@@ -754,7 +1127,23 @@ static int bnet_send_WRITEUSERDATA_2(BnetConnectionData *bnet,
     return ret;
 }
 
-static int bnet_send_AUTH_INFO(BnetConnectionData *bnet)
+static int
+bnet_send_NEWS_INFO(const BnetConnectionData *bnet)
+{
+    BnetPacket *pkt = NULL;
+    int ret = -1;
+    int zero = 0;
+    
+    pkt = bnet_packet_create(BNET_PACKET_BNCS);
+    bnet_packet_insert(pkt, &zero, BNET_SIZE_DWORD);
+    
+    ret = bnet_packet_send(pkt, BNET_SID_NEWS_INFO, bnet->sbnet.fd);
+    
+    return ret;
+}
+
+static int
+bnet_send_AUTH_INFO(const BnetConnectionData *bnet)
 {
     BnetPacket *pkt = NULL;
     int ret = -1;
@@ -763,7 +1152,7 @@ static int bnet_send_AUTH_INFO(BnetConnectionData *bnet)
     guint32 platform_id = BNET_PLATFORM_IX86;
     guint32 product_id = bnet->product_id;
     guint32 version_code = bnet->version_code;
-    guint32 product_lang = 1033;
+    guint32 product_lang = 1033; // TODO: find pidgin's locale?!
     guint32 local_ip = 0;
     guint32 tz_bias = 0;
     guint32 mpq_lang = 1033;
@@ -772,9 +1161,9 @@ static int bnet_send_AUTH_INFO(BnetConnectionData *bnet)
     char *country = "United States";
     
     const char *c_local_ip = purple_network_get_local_system_ip(bnet->sbnet.fd);
-    local_ip = *((guint32 *)(void *)(purple_network_ip_atoi(c_local_ip)));
+    local_ip = *((guint32 *)(purple_network_ip_atoi(c_local_ip)));
     
-    tz_bias = (guint32)(get_tz_bias() / 60.0f);
+    tz_bias = (guint32)(bnet_get_tz_bias() / 60.0f);
     
     purple_debug_info("bnet", "local ip %08x\n", local_ip);
     purple_debug_info("bnet", "tz bias %d\n", tz_bias);
@@ -799,12 +1188,12 @@ static int bnet_send_AUTH_INFO(BnetConnectionData *bnet)
     return ret;
 }
 
-static int bnet_send_AUTH_CHECK(BnetConnectionData *bnet,
+static int
+bnet_send_AUTH_CHECK(const BnetConnectionData *bnet,
        guint32 exe_version, guint32 exe_checksum, char *exe_info)
 {
     BnetPacket *pkt = NULL;
     int ret = -1;
-    guint32 client_cookie = 0;
     guint32 key_count = 0;
     guint32 key_spawn = 0;
     const char *key_owner = purple_account_get_string(bnet->account, "key_owner", "");
@@ -816,29 +1205,10 @@ static int bnet_send_AUTH_CHECK(BnetConnectionData *bnet,
         key_owner = bnet->username;
     }
     
-    client_cookie = g_random_int();
-    
-    bnet->client_cookie = client_cookie;
-    
     purple_debug_info("bnet", "server cookie: %08x\n", bnet->server_cookie);
     purple_debug_info("bnet", "client cookie: %08x\n", bnet->client_cookie);
     
-    switch (bnet->game) {
-        default:
-            key_count = 0;
-            break;
-        case BNET_GAME_TYPE_STAR:
-        case BNET_GAME_TYPE_SEXP:
-        case BNET_GAME_TYPE_W2BN:
-        case BNET_GAME_TYPE_D2DV:
-        case BNET_GAME_TYPE_WAR3:
-            key_count = 1;
-            break;
-        case BNET_GAME_TYPE_D2XP:
-        case BNET_GAME_TYPE_W3XP:
-            key_count = 2;
-            break;
-    }
+    key_count = bnet_get_key_count(bnet);
     
     keys = g_new0(BnetKey, 2);
     
@@ -848,7 +1218,7 @@ static int bnet_send_AUTH_CHECK(BnetConnectionData *bnet,
         purple_account_get_string(bnet->account, "key2", ""));
     
     if (!keys_are_valid) {
-        char *exp = "";
+        const char *exp = "";
         char *tmp = NULL;
         if (keys[0].length > 0) {
             // first key valid, second key must not be then
@@ -881,7 +1251,8 @@ static int bnet_send_AUTH_CHECK(BnetConnectionData *bnet,
     return ret;
 }
 
-static int bnet_send_AUTH_ACCOUNTLOGON(BnetConnectionData *bnet, char *A)
+static int
+bnet_send_AUTH_ACCOUNTLOGON(const BnetConnectionData *bnet, char *A)
 {
     BnetPacket *pkt = NULL;
     int ret = -1;
@@ -899,20 +1270,22 @@ static int bnet_send_AUTH_ACCOUNTLOGON(BnetConnectionData *bnet, char *A)
     return ret;
 }
 
-static int bnet_send_AUTH_ACCOUNTLOGONPROOF(BnetConnectionData *bnet, char *M1)
+static int
+bnet_send_AUTH_ACCOUNTLOGONPROOF(const BnetConnectionData *bnet, char *M1)
 {
     BnetPacket *pkt = NULL;
     int ret = -1;
     
     pkt = bnet_packet_create(BNET_PACKET_BNCS);
-    bnet_packet_insert(pkt, M1, 20);
+    bnet_packet_insert(pkt, M1, SHA1_HASH_SIZE);
     
     ret = bnet_packet_send(pkt, BNET_SID_AUTH_ACCOUNTLOGONPROOF, bnet->sbnet.fd);
     
     return ret;
 }
 
-static int bnet_send_FRIENDSLIST(BnetConnectionData *bnet)
+static int
+bnet_send_FRIENDSLIST(const BnetConnectionData *bnet)
 {
     BnetPacket *pkt = NULL;
     int ret = -1;
@@ -924,32 +1297,133 @@ static int bnet_send_FRIENDSLIST(BnetConnectionData *bnet)
     return ret;
 }
 
-static void bnet_account_logon(BnetConnectionData *bnet)
+static int
+bnet_send_CLANCREATIONINVITATION(const BnetConnectionData *bnet, const int cookie, const BnetClanTag clan_tag, const gchar *inviter_name, gboolean accept)
 {
-    if (bnet->nls_revision == 0) {
+    BnetPacket *pkt = NULL;
+    int ret = -1;
+    BnetClanResponseCode response = BNET_CLAN_RESPONSE_DECLINE;
+    if (accept) {
+        response = BNET_CLAN_RESPONSE_ACCEPT;
+    }
+    
+    pkt = bnet_packet_create(BNET_PACKET_BNCS);
+    bnet_packet_insert(pkt, &cookie, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, &clan_tag, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, inviter_name, strlen(inviter_name) + 1);
+    bnet_packet_insert(pkt, &response, BNET_SIZE_BYTE);
+    
+    ret = bnet_packet_send(pkt, BNET_SID_CLANCREATIONINVITATION, bnet->sbnet.fd);
+    
+    return ret;
+}
+
+static int
+bnet_send_CLANINVITATIONRESPONSE(const BnetConnectionData *bnet, const int cookie, const BnetClanTag clan_tag, const gchar *inviter_name, gboolean accept)
+{
+    BnetPacket *pkt = NULL;
+    int ret = -1;
+    BnetClanResponseCode response = BNET_CLAN_RESPONSE_DECLINE;
+    if (accept) {
+        response = BNET_CLAN_RESPONSE_ACCEPT;
+    }
+    
+    pkt = bnet_packet_create(BNET_PACKET_BNCS);
+    bnet_packet_insert(pkt, &cookie, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, &clan_tag, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, inviter_name, strlen(inviter_name) + 1);
+    bnet_packet_insert(pkt, &response, BNET_SIZE_BYTE);
+    
+    ret = bnet_packet_send(pkt, BNET_SID_CLANINVITATIONRESPONSE, bnet->sbnet.fd);
+    
+    return ret;
+}
+
+static int
+bnet_send_CLANSETMOTD(const BnetConnectionData *bnet, const int cookie, const gchar *motd)
+{
+    BnetPacket *pkt = NULL;
+    int ret = -1;
+    
+    pkt = bnet_packet_create(BNET_PACKET_BNCS);
+    bnet_packet_insert(pkt, &cookie, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, motd, strlen(motd) + 1);
+    
+    ret = bnet_packet_send(pkt, BNET_SID_CLANSETMOTD, bnet->sbnet.fd);
+    
+    return ret;
+}
+
+static int
+bnet_send_CLANMOTD(const BnetConnectionData *bnet, const int cookie)
+{
+    BnetPacket *pkt = NULL;
+    int ret = -1;
+    
+    pkt = bnet_packet_create(BNET_PACKET_BNCS);
+    bnet_packet_insert(pkt, &cookie, BNET_SIZE_DWORD);
+    
+    ret = bnet_packet_send(pkt, BNET_SID_CLANMOTD, bnet->sbnet.fd);
+    
+    return ret;
+}
+
+static int
+bnet_send_CLANMEMBERLIST(const BnetConnectionData *bnet, const int cookie)
+{
+    BnetPacket *pkt = NULL;
+    int ret = -1;
+    
+    pkt = bnet_packet_create(BNET_PACKET_BNCS);
+    bnet_packet_insert(pkt, &cookie, BNET_SIZE_DWORD);
+    
+    ret = bnet_packet_send(pkt, BNET_SID_CLANMEMBERLIST, bnet->sbnet.fd);
+    
+    return ret;
+}
+
+static void
+bnet_account_logon(BnetConnectionData *bnet)
+{
+    if (bnet->logon_system == 0) {
         bnet_send_LOGONRESPONSE2(bnet);
     } else {
-        if (FALSE) { // BNLS NLS/SRP
-            bnls_send_CHOOSENLSREVISION(bnet);
-        } else { // local NLS/SRP
-            const char *username = bnet->username;
-            const char *password = purple_account_get_password(bnet->account);
-            
-            gchar A[32];
-            bnet->account_data = srp_init(username, password);
-            srp_get_A(bnet->account_data, A);
-            bnet_send_AUTH_ACCOUNTLOGON(bnet, A);
-        }
+        // // BNLS NLS/SRP: disabled
+        // bnet_bnls_send_CHOOSENLSREVISION(bnet);
+        
+        // // local NLS/SRP:
+        const char *username = bnet->username;
+        const char *password = purple_account_get_password(bnet->account);
+        
+        gchar A[32];
+        bnet->account_data = srp_init(username, password);
+        srp_get_A(bnet->account_data, A);
+        bnet_send_AUTH_ACCOUNTLOGON(bnet, A);
     }
 }
 
-static void bnet_enter_chat(BnetConnectionData *bnet)
+static void
+bnet_enter_channel(const BnetConnectionData *bnet)
 {
-    bnet_send_ENTERCHAT(bnet);
-    bnet_send_GETCHANNELLIST(bnet);
     bnet_send_JOINCHANNEL(bnet,
             (BnetChannelJoinFlags)
-            (BNET_CHANNELJOIN_FIRSTJOIN | BNET_CHANNELJOIN_D2FIRST), "Pidgin");
+            (BNET_CHANNELJOIN_FIRSTJOIN |
+            (bnet_is_d2(bnet) ? BNET_CHANNELJOIN_D2FIRST : 0)), "Lobby");
+}
+
+static void
+bnet_enter_chat(BnetConnectionData *bnet)
+{
+    if (bnet_is_d2(bnet) || bnet_is_w3(bnet)) {
+        bnet_send_GETCHANNELLIST(bnet);
+        bnet_send_ENTERCHAT(bnet);
+    } else {
+        bnet_send_ENTERCHAT(bnet);
+        bnet_send_GETCHANNELLIST(bnet);
+        bnet->sent_enter_channel = TRUE;
+        bnet_enter_channel(bnet);
+        bnet_send_NEWS_INFO(bnet);
+    }
 }
 
 static gboolean bnet_keepalive_timer(BnetConnectionData *bnet)
@@ -969,10 +1443,25 @@ static gboolean bnet_keepalive_timer(BnetConnectionData *bnet)
         bnet_send_FRIENDSLIST(bnet);
     }
     
+    if (bnet->clan_info != NULL) {
+        // SID_CLANMEMBERLIST; every 2 minutes, alternating with FRIENDSLIST and CLANMOTD
+        if ((bnet->ka_tick % 4) == 1) {
+            int memblist_cookie = bnet_clan_packet_register(bnet->clan_info, BNET_SID_CLANMEMBERLIST, NULL);
+            bnet_send_CLANMEMBERLIST(bnet, memblist_cookie);
+        }
+        
+        // SID_MOTD; every 2 minutes, alternating with FRIENDSLIST and CLANMEMBERLIST
+        if ((bnet->ka_tick % 4) == 3) {
+            int motd_cookie = bnet_clan_packet_register(bnet->clan_info, BNET_SID_CLANMOTD, NULL);
+            bnet_send_CLANMOTD(bnet, motd_cookie);
+        }
+    }
+    
     return TRUE;
 }
 
-static void bnet_account_register(PurpleAccount *account)
+static void
+bnet_account_register(PurpleAccount *account)
 {
     purple_debug_info("bnet", "REGISTER ACCOUNT REQUEST");
     bnet_connect(account, TRUE);
@@ -980,7 +1469,8 @@ static void bnet_account_register(PurpleAccount *account)
     //bnet->create_if_dne = TRUE;
 }
 
-static void bnet_account_chpw(PurpleConnection *gc, const char *oldpass, const char *newpass)
+static void
+bnet_account_chpw(PurpleConnection *gc, const char *oldpass, const char *newpass)
 {
     BnetConnectionData *bnet = gc->proto_data;
     
@@ -990,7 +1480,8 @@ static void bnet_account_chpw(PurpleConnection *gc, const char *oldpass, const c
     bnet->change_pw_to = g_strdup(newpass);
 }
 
-static void bnet_input_cb(gpointer data, gint source, PurpleInputCondition cond)
+static void
+bnet_input_cb(gpointer data, gint source, PurpleInputCondition cond)
 {
     PurpleConnection *gc = data;
     BnetConnectionData *bnet = gc->proto_data;
@@ -1007,23 +1498,43 @@ static void bnet_input_cb(gpointer data, gint source, PurpleInputCondition cond)
     if (len < 0 && errno == EAGAIN) {
         return;
     } else if (len < 0) {
-        gchar *tmp = g_strdup_printf("Lost connection with server: %s\n",
+        gchar *tmp = NULL;
+        purple_input_remove(bnet->sbnet.inpa);
+        tmp = g_strdup_printf("Lost connection with server: %s\n",
                 g_strerror(errno));
         purple_connection_error_reason (gc,
             PURPLE_CONNECTION_ERROR_NETWORK_ERROR, tmp);
+        purple_debug_info("bnet", tmp);
         g_free(tmp);
+        close(bnet->sbnet.fd);
+        bnet->sbnet.fd = 0;
+        if (bnet->sbnls.fd > 0) {
+            purple_input_remove(bnet->sbnls.inpa);
+            close(bnet->sbnls.fd);
+            bnet->sbnls.fd = 0;
+        }
         return;
     } else if (len == 0) {
+        purple_input_remove(bnet->sbnet.inpa);
         purple_connection_error_reason (gc,
             PURPLE_CONNECTION_ERROR_NETWORK_ERROR,
             "Server closed the connection\n");
+        purple_debug_info("bnet", "BNET disconnected.\n");
+        close(bnet->sbnet.fd);
+        bnet->sbnet.fd = 0;
+        if (bnet->sbnls.fd > 0) {
+            purple_input_remove(bnet->sbnls.inpa);
+            close(bnet->sbnls.fd);
+            bnet->sbnls.fd = 0;
+        }
         return;
     }
 
     bnet_read_input(bnet, len);
 }
 
-static void bnet_read_input(BnetConnectionData *bnet, int len)
+static void
+bnet_read_input(BnetConnectionData *bnet, int len)
 {
     guint8 *this_start = NULL;
     guint8 this_hdr = 0;
@@ -1058,18 +1569,114 @@ static void bnet_read_input(BnetConnectionData *bnet, int len)
     }
 }
 
-static void bnet_recv_ENTERCHAT(BnetConnectionData *bnet, BnetPacket *pkt)
+/* this method would do nothing as all fields received are defunct
+static void
+bnet_recv_CLIENTID(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+}*/
+
+static void
+bnet_recv_STARTVERSIONING(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+    guint64 mpq_ft = bnet_packet_read_qword(pkt);
+    char* mpq_fn = bnet_packet_read_cstring(pkt);
+    char* checksum_formula = bnet_packet_read_cstring(pkt);
+    
+    bnet_bnls_send_VERSIONCHECKEX2(bnet,
+        bnet->logon_system, bnet->server_cookie, bnet->udp_cookie, mpq_ft, mpq_fn, checksum_formula);
+    
+    g_free(mpq_fn);
+    g_free(checksum_formula);
+}
+
+static void
+bnet_recv_REPORTVERSION(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+    guint32 result = bnet_packet_read_dword(pkt);
+    char *extra_info = bnet_packet_read_cstring(pkt);
+    
+    PurpleConnection *gc = bnet->account->gc;
+    
+    char *tmp = NULL;
+    char *tmpe = NULL;
+    char *tmpf = NULL;
+    
+    PurpleConnectionError conn_error = PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED;
+    
+    switch (result) {
+        case BNET_REPORTVERS_SUCCESS:
+        {
+            int key_count = bnet_get_key_count(bnet);
+            
+            bnet->versioning_complete = TRUE;            
+            purple_debug_info("bnet", "Version check passed!\n");
+            
+            if (key_count > 0) {
+                switch (bnet->versioning_system) {
+                    case BNET_VERSIONING_LEGACY:
+                        bnet_send_CDKEY(bnet);
+                        break;
+                    case BNET_VERSIONING_LEGACY2:
+                        bnet_send_CDKEY2(bnet);
+                        break;
+                    default:
+                        purple_debug_fatal("bnet", "Received SID_REPORTVERSION during AUTH logon sequence. Key required for this product. Unknown next packet. Logging on to account instead.");
+                        
+                        purple_connection_update_progress(gc, "Authenticating", BNET_STEP_LOGON, BNET_STEP_COUNT);
+                        
+                        bnet_account_logon(bnet);
+                        break;
+                }
+            } else {
+                purple_connection_update_progress(gc, "Authenticating", BNET_STEP_LOGON, BNET_STEP_COUNT);
+                
+                bnet_account_logon(bnet);
+            }
+            g_free(extra_info);
+            return;
+        }
+        case BNET_REPORTVERS_FAILED:
+            tmp = "Version check failed%s.";
+            break;
+        case BNET_REPORTVERS_OLD:
+            tmp = "Old version%s.";
+            break;
+        case BNET_REPORTVERS_INVALID:
+            tmp = "Version invalid%s.";
+            break;
+        default:
+            tmp = "Version check failed%s.";
+            break;
+    }
+    
+    tmpe = g_strdup_printf(" (%s)", extra_info);
+    tmpf = g_strdup_printf(tmp, strlen(extra_info) > 0 ? tmpe : "");
+    purple_connection_error_reason (gc, conn_error, tmpf);
+    
+    g_free(tmpe);
+    g_free(tmpf);
+    
+    g_free(extra_info);
+}
+
+static void
+bnet_recv_ENTERCHAT(BnetConnectionData *bnet, BnetPacket *pkt)
 {
     char *unique_username = bnet_packet_read_cstring(pkt);
     char *statstring = bnet_packet_read_cstring(pkt);
     char *account = bnet_packet_read_cstring(pkt);
     
+    bnet->my_statstring = statstring;
+    bnet->my_accountname = account;
     bnet->unique_username = unique_username;
-    g_free(statstring);
-    g_free(account);
+    
+    if (bnet_is_d2(bnet) || bnet_is_w3(bnet)) {
+        bnet_send_NEWS_INFO(bnet);
+    }
 }
 
-static void bnet_recv_GETCHANNELLIST(BnetConnectionData *bnet, BnetPacket *pkt)
+static void
+bnet_recv_GETCHANNELLIST(BnetConnectionData *bnet, BnetPacket *pkt)
 {
     char *channel = NULL;
     
@@ -1082,7 +1689,8 @@ static void bnet_recv_GETCHANNELLIST(BnetConnectionData *bnet, BnetPacket *pkt)
     bnet->channel_list = g_list_reverse(bnet->channel_list);
 }
 
-static char *bnet_locale_to_utf8(char *input)
+static char *
+bnet_locale_to_utf8(const char *input)
 {
     char *output = NULL;
     
@@ -1104,7 +1712,8 @@ static char *bnet_locale_to_utf8(char *input)
     return output;
 }
 
-static char *bnet_locale_from_utf8(char *input)
+static char *
+bnet_locale_from_utf8(const char *input)
 {
     GError *err = NULL;
     char *output = g_locale_from_utf8(input, -1, NULL, NULL, &err);
@@ -1117,7 +1726,8 @@ static char *bnet_locale_from_utf8(char *input)
     return output;
 }
 
-static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
+static void
+bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
 {
     BnetChatEventID id = 0;
     BnetChatEventFlags flags = 0;
@@ -1182,6 +1792,8 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                 
                 bcu->flags = flags;
                 bcu->ping = ping;
+                // intentional: stats should not be read as UTF-8.
+                // Diablo II statstrings will be affected. what used instead of what_utf.
                 if (strlen(what) > 0) {
                     bcu->stats_data = g_strdup(what);
                 }
@@ -1193,18 +1805,64 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
             } else {
                 // new user
                 BnetChannelUser *bcu = g_new0(BnetChannelUser, 1);
+                gchar *who_nn = NULL;
+                gchar *uu_n = NULL;
                 
+                bcu->type = BNET_USER_TYPE_CHANNELUSER;
                 bcu->username = g_strdup(who_n);
+                // intentional: stats should not be read as UTF-8.
+                // Diablo II statstrings will be affected. what used instead of what_utf.
                 bcu->stats_data = g_strdup(what);
                 bcu->flags = flags;
                 bcu->ping = ping;
                 bcu->hidden = FALSE;
                 bnet->channel_users = g_list_append(bnet->channel_users, bcu);
                 
-                if (chat != NULL) {
-                    purple_conv_chat_add_user(chat, who_n,
-                             bnet_channel_message_parse(bcu->stats_data, flags, ping),
-                             bnet_channel_flags_to_prpl_flags(flags), FALSE);
+                //if (chat != NULL) {
+                    //purple_conv_chat_add_user(chat, who_n,
+                    //         bnet_channel_message_parse(bcu->stats_data, flags, ping),
+                    //         bnet_channel_flags_to_prpl_flags(flags), FALSE);
+                //}
+                who_nn = g_strdup(bnet_normalize(bnet->account, who_n));
+                uu_n = g_strdup(bnet_normalize(bnet->account, bnet->unique_username));
+                if (strcmp(who_nn, uu_n) == 0) {
+                    //purple_debug_info("bnet", "join channel complete\n");
+                    GList *users = NULL;
+                    GList *extras = NULL;
+                    GList *flags = NULL;
+                    GList *el = g_list_first(bnet->channel_users);
+                    //int i = 0;
+                    while (el != NULL) {
+                        BnetChannelUser *bcuel = el->data;
+                        int bcuelflags = bnet_channel_flags_to_prpl_flags(bcuel->flags);
+                        
+                        users = g_list_prepend(users, bcuel->username);
+                        extras = g_list_prepend(extras, bnet_channel_message_parse(bcuel->stats_data, bcuel->flags, bcuel->ping));
+                        flags = g_list_prepend(flags, (void *)bcuelflags);
+                        //i++;
+                        //purple_debug_info("bnet", "%d: %s status: %d\n", i, bcuel->username, bcuel->status);
+                        el = g_list_next(el);
+                    }
+                    if (bnet->first_join) {
+                        bnet->first_join = FALSE;
+                    } else {
+                        conv = serv_got_joined_chat(gc, bnet->channel_id, bnet->channel_name);
+                        if (conv != NULL) {
+                            chat = purple_conversation_get_chat_data(conv);
+                        }
+                        if (chat != NULL) {
+                            if (bnet->clan_info != NULL) {
+                                if (bnet_clan_is_clan_channel(bnet->clan_info, bnet->channel_name)) {
+                                    gchar *motd = bnet_clan_info_get_motd(bnet->clan_info);
+                                    purple_conv_chat_set_topic(chat, "(clan leader)", motd);
+                                }
+                            }
+                            purple_conv_chat_add_users(chat, users, extras, flags, FALSE);
+                        }
+                    }
+                    g_list_free(users);
+                    g_list_free(extras);
+                    g_list_free(flags);
                 }
             }
             break;
@@ -1218,7 +1876,9 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
             
             bcu = g_new0(BnetChannelUser, 1);
             bcu->username = g_strdup(who_n);
-            bcu->stats_data = g_strdup(what_utf);
+            // intentional: stats should not be read as UTF-8.
+            // Diablo II statstrings will be affected. what used instead of what_utf.
+            bcu->stats_data = g_strdup(what);
             bcu->flags = flags;
             bcu->ping = ping;
             bcu->hidden = FALSE;
@@ -1302,41 +1962,46 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
             break;
         case BNET_EID_CHANNEL:
         {
-            gboolean this_firstjoin = FALSE;
-            
             purple_debug_info("bnet", "JOIN CHANNEL %s %x %dms: %s\n",
                 who, flags, ping, what_utf);
             
-            if (bnet->first_join) {
-                bnet->first_join = FALSE;
-                this_firstjoin = TRUE;
-            } else if (bnet->channel_id != 0) {
+            // if libpurple thinks we're in a channel, leave it
+            if (!bnet->first_join && bnet->channel_id != 0) {
                 if (chat != NULL) {    
-                    purple_conv_chat_write(chat, "Battle.net", "You have left this chat. Battle.net only allows being in one channel at any time.", PURPLE_MESSAGE_SYSTEM, time(NULL));
+                    purple_conv_chat_write(chat, "Battle.net", "You have left this chat channel. Battle.net only allows being in one channel at any time.", PURPLE_MESSAGE_SYSTEM, time(NULL));
                 }
                 serv_got_chat_left(gc, bnet->channel_id);
             }
             
+            // clear the user list
             if (bnet->channel_users != NULL) {
                 //g_list_free_full(bnet->channel_users, bnet_channel_user_free);
                 g_list_free(bnet->channel_users);
                 bnet->channel_users = NULL;
             }
             
+            // generate chat ID
             norm = bnet_normalize(bnet->account, what_utf);
             chat_id = g_str_hash(norm);
             
-            // TODO: get rid of this dumb code
-            if (strlen(norm) >= 6 &&
-                norm[0] == 'c' && norm[1] == 'l' && norm[2] == 'a' &&
-                norm[3] == 'n' && norm[4] == ' ') {
-                this_firstjoin = FALSE;
+            // in clan, we are going to join clan's home instead
+            if (bnet->clan_info != NULL) {
+                bnet->first_join = FALSE;
             }
             
+            // the PvPGN check...
+            if (bnet->first_join && strcmp("lobby", norm) == 0) {
+                bnet->first_join = FALSE;
+            }
+            
+            // store current channel data
             bnet->channel_id = chat_id;
             bnet->channel_name = g_strdup(what_utf);
             bnet->channel_flags = flags;
-            if (!this_firstjoin) {
+            
+            // the silent channel check: we don't get ourself in one case, when we are in a silent channel
+            if ((bnet->channel_flags & BNET_CHAN_FLAG_SILENT) == BNET_CHAN_FLAG_SILENT) {
+                bnet->first_join = FALSE;
                 serv_got_joined_chat(gc, chat_id, what_utf);
             }
             break;
@@ -1373,7 +2038,7 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
             break;
         case BNET_EID_CHANNELFULL:
             purple_debug_info("bnet", "CHANNEL IS FULL %s %x %dms: %s\n",
-                who, flags, ping, what_utf);
+who, flags, ping, what_utf);
                 
             purple_serv_got_join_chat_failed(gc, bnet->join_attempt);
             break;
@@ -1421,10 +2086,12 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                     
                     b = purple_find_buddy(bnet->account, whois_user_n);
                     if (b != NULL) {
-                        BnetFriendInfo *bfi = purple_buddy_get_protocol_data(b);
+                        BnetUser *bfi = purple_buddy_get_protocol_data(b);
                         if (bfi != NULL) {
-                            if (bfi->automated_lookup) {
-                                handled = TRUE;
+                            if (bfi->type == BNET_USER_TYPE_FRIEND) {
+                                if (((BnetFriendInfo *)bfi)->automated_lookup) {
+                                    handled = TRUE;
+                                }
                             }
                         }
                     }
@@ -1480,12 +2147,14 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                     
                     b = purple_find_buddy(bnet->account, away_user_n);
                     if (b != NULL) {
-                        BnetFriendInfo *bfi = purple_buddy_get_protocol_data(b);
+                        BnetUser *bfi = purple_buddy_get_protocol_data(b);
                         if (bfi != NULL) {
-                            bfi->stored_status = g_strdup(away_msg);
-                            if (bfi->automated_lookup) {
-                                handled = TRUE;
-                                bfi->automated_lookup = FALSE;
+                            if (bfi->type == BNET_USER_TYPE_FRIEND) {
+                                ((BnetFriendInfo *)bfi)->stored_status = g_strdup(away_msg);
+                                if (((BnetFriendInfo *)bfi)->automated_lookup) {
+                                    handled = TRUE;
+                                    ((BnetFriendInfo *)bfi)->automated_lookup = FALSE;
+                                }
                             }
                         }
                         
@@ -1559,12 +2228,14 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                     
                     b = purple_find_buddy(bnet->account, dnd_user_n);
                     if (b != NULL) {
-                        BnetFriendInfo *bfi = purple_buddy_get_protocol_data(b);
+                        BnetUser *bfi = purple_buddy_get_protocol_data(b);
                         if (bfi != NULL) {
-                            bfi->stored_status = g_strdup(dnd_msg);
-                            if (bfi->automated_lookup) {
-                                handled = TRUE;
-                                bfi->automated_lookup = FALSE;
+                            if (bfi->type == BNET_USER_TYPE_FRIEND) {
+                                ((BnetFriendInfo *)bfi)->stored_status = g_strdup(dnd_msg);
+                                if (((BnetFriendInfo *)bfi)->automated_lookup) {
+                                    handled = TRUE;
+                                    ((BnetFriendInfo *)bfi)->automated_lookup = FALSE;
+                                }
                             }
                         }
                         
@@ -1701,7 +2372,7 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                     } else if (chat) {
                         purple_conv_chat_write(chat, "Battle.net", what_utf, PURPLE_MESSAGE_SYSTEM, time(NULL));
                     } else {
-                        bnet->welcome_msgs = g_list_append(bnet->welcome_msgs, what_utf);
+                        //bnet->welcome_msgs = g_list_append(bnet->welcome_msgs, what_utf);
                     }
                 }
             }
@@ -1785,7 +2456,8 @@ static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
     g_free(what_utf);
 }
 
-static void bnet_recv_MESSAGEBOX(BnetConnectionData *bnet, BnetPacket *pkt)
+static void
+bnet_recv_MESSAGEBOX(BnetConnectionData *bnet, BnetPacket *pkt)
 {
     guint32 style = bnet_packet_read_dword(pkt);
     char *text = bnet_packet_read_cstring(pkt);
@@ -1805,7 +2477,15 @@ static void bnet_recv_MESSAGEBOX(BnetConnectionData *bnet, BnetPacket *pkt)
     }
 }
 
-static void bnet_recv_PING(BnetConnectionData *bnet, BnetPacket *pkt)
+static void
+bnet_recv_LOGONCHALLENGEEX(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+    bnet->udp_cookie = bnet_packet_read_dword(pkt);
+    bnet->server_cookie = bnet_packet_read_dword(pkt);
+}
+
+static void
+bnet_recv_PING(BnetConnectionData *bnet, BnetPacket *pkt)
 {
     guint32 cookie = bnet_packet_read_dword(pkt);
     
@@ -1813,7 +2493,8 @@ static void bnet_recv_PING(BnetConnectionData *bnet, BnetPacket *pkt)
     bnet_send_PING(bnet, cookie);
 }
 
-static void bnet_recv_READUSERDATA(BnetConnectionData *bnet, BnetPacket *pkt)
+static void
+bnet_recv_READUSERDATA(BnetConnectionData *bnet, BnetPacket *pkt)
 {
     // readuserdata
     guint32 key_count, request_cookie/*, account_count*/;
@@ -1824,16 +2505,18 @@ static void bnet_recv_READUSERDATA(BnetConnectionData *bnet, BnetPacket *pkt)
     
     for (i = 0; i < g_list_length(bnet->userdata_requests); i++) {
         BnetUserDataRequest *req = g_list_nth_data(bnet->userdata_requests, i);
-        if (req->cookie == request_cookie) {
+        if (bnet_userdata_request_get_cookie(req) == request_cookie) {
             GHashTable *userdata = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, g_free);
             gboolean showing_lookup_dialog = FALSE;
+            BnetUserDataRequestType request_type = bnet_userdata_request_get_type(req);
             
             for (j = 0; j < key_count; j++) {
-                g_hash_table_insert(userdata, req->userdata_keys[j],
+                g_hash_table_insert(userdata,
+                            bnet_userdata_request_get_key_by_index(req, j),
                             bnet_packet_read_cstring(pkt));
             }
             
-            if (req->request_type & BNET_READUSERDATA_REQUEST_PROFILE) {
+            if (request_type & BNET_READUSERDATA_REQUEST_PROFILE) {
                 if (bnet->writing_profile) {
                     char *psex = g_hash_table_lookup(userdata, "profile\\sex");
                     char *page = g_hash_table_lookup(userdata, "profile\\age");
@@ -1899,7 +2582,7 @@ static void bnet_recv_READUSERDATA(BnetConnectionData *bnet, BnetPacket *pkt)
                 }
             }
             
-            if (req->request_type & BNET_READUSERDATA_REQUEST_SYSTEM) {
+            if (request_type & BNET_READUSERDATA_REQUEST_SYSTEM) {
                 if (bnet->lookup_user != NULL) {
                     gboolean is_section = FALSE;
                     char *pstr;
@@ -1959,7 +2642,7 @@ static void bnet_recv_READUSERDATA(BnetConnectionData *bnet, BnetPacket *pkt)
                 }
             }
             
-            if (req->request_type & BNET_READUSERDATA_REQUEST_RECORD) {
+            if (request_type & BNET_READUSERDATA_REQUEST_RECORD) {
                 if (bnet->lookup_user != NULL) {
                     gboolean is_section = FALSE;
                     showing_lookup_dialog = TRUE;
@@ -1974,8 +2657,8 @@ static void bnet_recv_READUSERDATA(BnetConnectionData *bnet, BnetPacket *pkt)
                         char *wins; char *losses; char *discs; char *lgame; char *lgameres;
                         char *rating; char *hrating; char *rank; char *hrank;
                         char *header_text = NULL;
-                        char *product_id = get_product_id_str(req->product);
-                        char *product = get_product_name(req->product);
+                        char *product_id = bnet_get_product_id_str(bnet_userdata_request_get_product(req));
+                        char *product = bnet_get_product_name(bnet_userdata_request_get_product(req));
                         
                         switch (j) {
                             case 0: header_text = "Normal"; break;
@@ -2076,13 +2759,114 @@ static void bnet_recv_READUSERDATA(BnetConnectionData *bnet, BnetPacket *pkt)
             bnet->userdata_requests = g_list_remove(bnet->userdata_requests, req);
             
             g_hash_table_destroy(userdata);
+            
+            bnet_userdata_request_free(req);
         }
     }
 }
 
-static void bnet_recv_AUTH_INFO(BnetConnectionData *bnet, BnetPacket *pkt)
+static void
+bnet_recv_LOGONCHALLENGE(BnetConnectionData *bnet, BnetPacket *pkt)
 {
-    guint32 login_type = bnet_packet_read_dword(pkt);
+    bnet->server_cookie = bnet_packet_read_dword(pkt);
+}
+
+static void
+bnet_recv_CDKEY(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+    guint32 result = bnet_packet_read_dword(pkt);
+    char *extra_info = bnet_packet_read_cstring(pkt);
+    
+    PurpleConnection *gc = bnet->account->gc;
+    
+    char *tmp = NULL;
+    char *tmpe = NULL;
+    char *tmpf = NULL;
+    
+    PurpleConnectionError conn_error = PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED;
+    
+    switch (result) {
+        case BNET_CDKEY_SUCCESS:
+        {
+            bnet->versioning_complete = TRUE;
+            
+            purple_debug_info("bnet", "Key check passed!\n");
+            
+            purple_connection_update_progress(gc, "Authenticating", BNET_STEP_LOGON, BNET_STEP_COUNT);
+                
+            bnet_account_logon(bnet);
+            
+            g_free(extra_info);
+            return;
+        }
+        case BNET_CDKEY_INVALID:
+            tmp = "CD-key invalid%s.";
+            break;
+        case BNET_CDKEY_BADPRODUCT:
+            tmp = "CD-key is for another game%s.";
+            break;
+        case BNET_CDKEY_BANNED:
+            tmp = "CD-key is banned%s.";
+            break;
+        case BNET_CDKEY_INUSE:
+            tmp = "CD-key is in use%s.";
+            break;
+        default:
+            tmp = "CD-key invalid%s.";
+            break;
+    }
+    
+    tmpe = g_strdup_printf(" (%s)", extra_info);
+    tmpf = g_strdup_printf(tmp, strlen(extra_info) > 0 ? tmpe : "");
+    purple_connection_error_reason (gc, conn_error, tmpf);
+    
+    g_free(tmpe);
+    g_free(tmpf);
+    
+    g_free(extra_info);
+}
+
+static void
+bnet_recv_CDKEY2(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+    bnet_recv_CDKEY(bnet, pkt);
+}
+
+static void
+bnet_recv_NEWS_INFO(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+    guint8 number_of_entries = bnet_packet_read_byte(pkt);
+    guint32 last_logon_timestamp = bnet_packet_read_dword(pkt);
+    guint32 oldest = bnet_packet_read_dword(pkt);
+    guint32 newest = bnet_packet_read_dword(pkt);
+    int i;
+    
+    purple_debug_info("bnet", "News items: %d\n", number_of_entries);
+    
+    for (i = 0; i < number_of_entries; i++) {
+        BnetNewsItem *item = g_new0(BnetNewsItem, 1);
+        
+        guint32 timestamp = bnet_packet_read_dword(pkt);
+        gchar *message = bnet_packet_read_cstring(pkt);
+        
+        purple_debug_info("bnet", "NEWS time %d: %s\n", timestamp, message);
+        
+        item->timestamp = timestamp;
+        item->message = message;
+        
+        bnet->news = g_list_append(bnet->news, item);
+    
+        if (item->timestamp == 0 && !bnet->sent_enter_channel) {
+            bnet->sent_enter_channel = TRUE;
+            bnet_enter_channel(bnet);
+        }
+    }
+}
+
+static void
+bnet_recv_AUTH_INFO(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+    guint32 logon_system = bnet_packet_read_dword(pkt);
     guint32 server_cookie = bnet_packet_read_dword(pkt);
     guint32 udp_cookie = bnet_packet_read_dword(pkt);
     guint64 mpq_ft = bnet_packet_read_qword(pkt);
@@ -2091,18 +2875,19 @@ static void bnet_recv_AUTH_INFO(BnetConnectionData *bnet, BnetPacket *pkt)
     
     //purple_debug_info("bnet", "mpqfn: %s; chfm: %s\n",
     //    mpq_fn, checksum_formula);
-    bnet->nls_revision = login_type;
+    bnet->logon_system = logon_system;
     bnet->server_cookie = server_cookie;
     bnet->udp_cookie = udp_cookie;
     
     if (bnet_is_w3(bnet)) {
-        /*gchar *signature;
-        struct sockaddr_in sa;
+        gchar *signature;
+        struct sockaddr sa;
+        struct sockaddr *psa = &sa;
         socklen_t sa_len = sizeof(sa);
         
         signature = (gchar *)bnet_packet_read(pkt, 128);
-        if (getsockname(bnet->sbnet.fd, &sa, &sa_len) == 0) {
-            int addr = sa.sin_addr;
+        if (getsockname(bnet->sbnet.fd, psa, &sa_len) == 0) {
+            guint64 addr = ((struct sockaddr_in *)psa)->sin_addr.s_addr;
             if (srp_check_signature(addr, signature) == FALSE) {
                 purple_debug_warning("bnet", "WarCraft III: Server sent an incorrect server signature for the current Battle.net server IP!\n");
             } else {
@@ -2112,17 +2897,18 @@ static void bnet_recv_AUTH_INFO(BnetConnectionData *bnet, BnetPacket *pkt)
             purple_debug_warning("bnet", "WarCraft III: Unable to verify server signature for the current Battle.net server IP!\n");
         }
         
-        g_free(signature);*/
+        g_free(signature);
     }
     
-    bnls_send_VERSIONCHECKEX2(bnet,
-        login_type, server_cookie, udp_cookie, mpq_ft, mpq_fn, checksum_formula);
+    bnet_bnls_send_VERSIONCHECKEX2(bnet,
+        logon_system, server_cookie, udp_cookie, mpq_ft, mpq_fn, checksum_formula);
     
     g_free(mpq_fn);
     g_free(checksum_formula);
 }
 
-static void bnet_recv_AUTH_CHECK(BnetConnectionData *bnet, BnetPacket *pkt)
+static void
+bnet_recv_AUTH_CHECK(BnetConnectionData *bnet, BnetPacket *pkt)
 {
     guint32 result = bnet_packet_read_dword(pkt);
     char *extra_info = bnet_packet_read_cstring(pkt);
@@ -2137,9 +2923,9 @@ static void bnet_recv_AUTH_CHECK(BnetConnectionData *bnet, BnetPacket *pkt)
     PurpleConnectionError conn_error = PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED;
     
     if (result == BNET_SUCCESS) {
+        bnet->versioning_complete = TRUE;
+        
         purple_debug_info("bnet", "Version and key check passed!\n");
-        if (bnet->create_if_dne) {
-        }
         
         purple_connection_update_progress(gc, "Authenticating", BNET_STEP_LOGON, BNET_STEP_COUNT);
         
@@ -2196,7 +2982,7 @@ static void bnet_recv_AUTH_CHECK(BnetConnectionData *bnet, BnetPacket *pkt)
         tmp = "Authorization failed%s.";
     }
     
-    tmpe = g_strdup_printf(" (%s).", extra_info);
+    tmpe = g_strdup_printf(" (%s)", extra_info);
     tmpf = g_strdup_printf(tmp, strlen(extra_info) > 0 ? tmpe : "");
     purple_connection_error_reason (gc, conn_error, tmpf);
     
@@ -2209,7 +2995,8 @@ static void bnet_recv_AUTH_CHECK(BnetConnectionData *bnet, BnetPacket *pkt)
     g_free(extra_info);
 }
 
-static void bnet_recv_AUTH_ACCOUNTLOGON(BnetConnectionData *bnet, BnetPacket *pkt)
+static void
+bnet_recv_AUTH_ACCOUNTLOGON(BnetConnectionData *bnet, BnetPacket *pkt)
 {
     guint32 result = bnet_packet_read_dword(pkt);
     
@@ -2221,7 +3008,7 @@ static void bnet_recv_AUTH_ACCOUNTLOGON(BnetConnectionData *bnet, BnetPacket *pk
             if (FALSE) { // BNLS
                 char *s_and_B = (char *)bnet_packet_read(pkt, 64);
                 
-                bnls_send_LOGONPROOF(bnet, s_and_B);
+                bnet_bnls_send_LOGONPROOF(bnet, s_and_B);
                 
                 g_free(s_and_B);
             } else { // local
@@ -2266,7 +3053,8 @@ static void bnet_recv_AUTH_ACCOUNTLOGON(BnetConnectionData *bnet, BnetPacket *pk
     }
 }
 
-static void bnet_recv_AUTH_ACCOUNTLOGONPROOF(BnetConnectionData *bnet, BnetPacket *pkt)
+static void
+bnet_recv_AUTH_ACCOUNTLOGONPROOF(BnetConnectionData *bnet, BnetPacket *pkt)
 {
     guint32 result = bnet_packet_read_dword(pkt);
     
@@ -2274,7 +3062,7 @@ static void bnet_recv_AUTH_ACCOUNTLOGONPROOF(BnetConnectionData *bnet, BnetPacke
     
     switch (result) {
         case BNET_SUCCESS: {
-            gchar *M2 = (gchar *)bnet_packet_read(pkt, 20);
+            gchar *M2 = (gchar *)bnet_packet_read(pkt, SHA1_HASH_SIZE);
             
             if (srp_check_M2(bnet->account_data, M2) == FALSE) {
                 purple_debug_warning("bnet", "SRP: Server sent an incorrect M[2] value!\n");
@@ -2324,7 +3112,8 @@ static void bnet_recv_AUTH_ACCOUNTLOGONPROOF(BnetConnectionData *bnet, BnetPacke
     }
 }
 
-static void bnet_recv_LOGONRESPONSE2(BnetConnectionData *bnet, BnetPacket *pkt)
+static void
+bnet_recv_LOGONRESPONSE2(BnetConnectionData *bnet, BnetPacket *pkt)
 {
     guint32 result = bnet_packet_read_dword(pkt);
     
@@ -2377,7 +3166,8 @@ static void bnet_recv_LOGONRESPONSE2(BnetConnectionData *bnet, BnetPacket *pkt)
     //purple_debug_info("bnet", "LOGONRESPONSE2: 0x%08x\n", result);
 }
 
-static void bnet_recv_CREATEACCOUNT2(BnetConnectionData *bnet, BnetPacket *pkt)
+static void
+bnet_recv_CREATEACCOUNT2(BnetConnectionData *bnet, BnetPacket *pkt)
 {
     guint32 result = bnet_packet_read_dword(pkt);
     
@@ -2387,7 +3177,9 @@ static void bnet_recv_CREATEACCOUNT2(BnetConnectionData *bnet, BnetPacket *pkt)
         case BNET_SUCCESS:
             purple_debug_info("bnet", "Account created!\n");
             bnet->create_if_dne = FALSE;
+            purple_input_remove(bnet->sbnet.inpa);
             close(bnet->sbnet.fd);
+            bnet->sbnet.fd = 0;
             break;
         case BNET_CREATEACC2_BADCHAR:
             //purple_connection_error_reason (gc,
@@ -2422,7 +3214,8 @@ static void bnet_recv_CREATEACCOUNT2(BnetConnectionData *bnet, BnetPacket *pkt)
     //purple_debug_info("bnet", "LOGONRESPONSE2: 0x%08x\n", result);
 }
 
-static void bnet_recv_FRIENDSLIST(BnetConnectionData *bnet, BnetPacket *pkt)
+static void
+bnet_recv_FRIENDSLIST(BnetConnectionData *bnet, BnetPacket *pkt)
 {
     guint8 fcount = bnet_packet_read_byte(pkt);
     guint8 idx = 0;
@@ -2480,10 +3273,11 @@ static void bnet_recv_FRIENDSLIST(BnetConnectionData *bnet, BnetPacket *pkt)
         //g_free(bfi);
     }
     
-    print_f_l(bnet);
+    bnet_print_f_l(bnet);
 }
 
-static void bnet_recv_FRIENDSUPDATE(BnetConnectionData *bnet, BnetPacket *pkt)
+static void
+bnet_recv_FRIENDSUPDATE(BnetConnectionData *bnet, BnetPacket *pkt)
 {
     guint8 index = bnet_packet_read_byte(pkt);
     BnetFriendInfo *bfi = g_list_nth_data(bnet->friends_list, index);
@@ -2498,7 +3292,8 @@ static void bnet_recv_FRIENDSUPDATE(BnetConnectionData *bnet, BnetPacket *pkt)
     g_free(location_name);
 }
 
-static void bnet_recv_FRIENDSADD(BnetConnectionData *bnet, BnetPacket *pkt)
+static void
+bnet_recv_FRIENDSADD(BnetConnectionData *bnet, BnetPacket *pkt)
 {
     BnetFriendInfo *bfi = g_new0(BnetFriendInfo, 1);
     guint8 index = g_list_length(bnet->friends_list);
@@ -2509,7 +3304,8 @@ static void bnet_recv_FRIENDSADD(BnetConnectionData *bnet, BnetPacket *pkt)
     BnetFriendLocation location = bnet_packet_read_byte(pkt);
     BnetProductID product_id = bnet_packet_read_dword(pkt);
     gchar *location_name = bnet_packet_read_cstring(pkt);
-    
+
+    bfi->type = BNET_USER_TYPE_FRIEND;
     bfi->account = account_name;
     bfi->status = -1;
     bfi->location = -1;
@@ -2523,7 +3319,8 @@ static void bnet_recv_FRIENDSADD(BnetConnectionData *bnet, BnetPacket *pkt)
     //g_free(bfi);
 }
 
-static void bnet_recv_FRIENDSREMOVE(BnetConnectionData *bnet, BnetPacket *pkt)
+static void
+bnet_recv_FRIENDSREMOVE(BnetConnectionData *bnet, BnetPacket *pkt)
 {
     BnetFriendInfo *bfi = NULL;
     guint8 index = bnet_packet_read_byte(pkt);
@@ -2538,10 +3335,11 @@ static void bnet_recv_FRIENDSREMOVE(BnetConnectionData *bnet, BnetPacket *pkt)
     
     bnet->friends_list = g_list_remove(bnet->friends_list, el->data);
     
-    print_f_l(bnet);
+    bnet_print_f_l(bnet);
 }
 
-static void bnet_recv_FRIENDSPOSITION(BnetConnectionData *bnet, BnetPacket *pkt)
+static void
+bnet_recv_FRIENDSPOSITION(BnetConnectionData *bnet, BnetPacket *pkt)
 {
     guint8 old_index = bnet_packet_read_byte(pkt);
     guint8 new_index = bnet_packet_read_byte(pkt);
@@ -2550,22 +3348,219 @@ static void bnet_recv_FRIENDSPOSITION(BnetConnectionData *bnet, BnetPacket *pkt)
     bnet->friends_list = g_list_remove_link(bnet->friends_list, bfi_link);
     bnet->friends_list = g_list_insert(bnet->friends_list, bfi_link->data, new_index);
     
-    print_f_l(bnet);
+    bnet_print_f_l(bnet);
 }
 
-static void bnet_recv_CLANCREATIONINVITATION(BnetConnectionData *bnet, BnetPacket *pkt)
+static void
+bnet_recv_CLANFINDCANDIDATES(BnetConnectionData *bnet, BnetPacket *pkt)
 {
-    /*gint32 cookie = bnet_packet_read_dword(pkt);
-    gint32 clan_tag = bnet_packet_read_dword(pkt);
-    gchar *clan_name = bnet_packet_read_cstring(pkt);
-    GList *invitees = NULL;
-    guint8 invitees_count = bnet_packet_read_byte(pkt);
-    
-    //bnet->
-    g_free(clan_name);*/
+}
+static void
+bnet_recv_CLANINVITEMULTIPLE(BnetConnectionData *bnet, BnetPacket *pkt)
+{
 }
 
-static void bnet_parse_packet(BnetConnectionData *bnet, guint8 packet_id, guint8 *packet_start, guint16 packet_len)
+static void
+bnet_recv_CLANCREATIONINVITATION(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+    gint32 cookie = bnet_packet_read_dword(pkt);
+    BnetClanTag clan_tag = bnet_packet_read_dword(pkt);
+    gchar *clan_name = bnet_packet_read_cstring(pkt);
+    gchar *inviter_name = bnet_packet_read_cstring(pkt);
+    char invitees_buf[200];
+    guint8 invitees_count = bnet_packet_read_byte(pkt);
+    int i;
+    int pos = 0;
+    gchar *clan_tag_string = bnet_clan_tag_to_string(clan_tag);
+    BnetClanInvitationCallbackData *callback_data = NULL;
+    
+    for (i = 0; i < invitees_count && i < 10; i++) {
+        gchar *user = bnet_packet_read_cstring(pkt);
+        if (pos < 199 && pos > 0) {
+            invitees_buf[pos] = ',';
+            invitees_buf[pos + 1] = ' ';
+            pos += 2;
+        }
+        if (pos < 200 - strlen(user)) {
+            memmove(invitees_buf + pos, user, strlen(user));
+            pos += strlen(user);
+        }
+        g_free(user);
+    }
+    invitees_buf[pos] = '\0';
+    
+    callback_data = g_new0(BnetClanInvitationCallbackData, 1);
+    callback_data->bnet = bnet;
+    callback_data->packet_id = BNET_SID_CLANCREATIONINVITATION;
+    callback_data->cookie = cookie;
+    callback_data->clan_tag = clan_tag;
+    callback_data->inviter = g_strdup(inviter_name);
+    callback_data->clan_name = g_strdup(clan_name);
+    
+    purple_request_action(bnet->account->gc, "Clan Creation Invitation",
+            g_strdup_printf("You have been invited by %s to help create Clan %s, %s with %d other users:",
+            inviter_name, clan_tag_string, clan_name, invitees_count),
+            g_strdup(invitees_buf),
+            0,
+            bnet->account,
+            NULL, NULL, 
+            callback_data,
+            2,
+            "_Decline", bnet_clan_invite_decline_cb,
+            "_Accept", bnet_clan_invite_accept_cb);
+    
+    g_free(clan_name);
+    g_free(inviter_name);
+    g_free(clan_tag_string);
+}
+
+static void
+bnet_recv_CLANDISBAND(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+}
+
+static void
+bnet_recv_CLANMAKECHIEFTAIN(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+}
+
+static void
+bnet_recv_CLANINFO(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+    BnetClanTag clan_tag;
+    BnetClanMemberRank rank;
+    int motd_cookie, memblist_cookie;
+    
+    bnet_packet_read_byte(pkt);
+    clan_tag = (BnetClanTag) bnet_packet_read_dword(pkt);
+    rank = (BnetClanMemberRank) bnet_packet_read_byte(pkt);
+    bnet->clan_info = bnet_clan_info_new(clan_tag, rank);
+    
+    motd_cookie = bnet_clan_packet_register(bnet->clan_info, BNET_SID_CLANMOTD, NULL);
+    bnet_send_CLANMOTD(bnet, motd_cookie);
+    
+    memblist_cookie = bnet_clan_packet_register(bnet->clan_info, BNET_SID_CLANMEMBERLIST, NULL);
+    bnet_send_CLANMEMBERLIST(bnet, memblist_cookie);
+}
+
+static void
+bnet_recv_CLANQUITNOTIFY(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+}
+
+static void
+bnet_recv_CLANINVITATION(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+}
+
+static void
+bnet_recv_CLANREMOVEMEMBER(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+}
+
+static void
+bnet_recv_CLANINVITATIONRESPONSE(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+    gint32 cookie = bnet_packet_read_dword(pkt);
+    BnetClanTag clan_tag = bnet_packet_read_dword(pkt);
+    gchar *clan_name = bnet_packet_read_cstring(pkt);
+    gchar *inviter_name = bnet_packet_read_cstring(pkt);
+    
+    gchar *clan_tag_string = bnet_clan_tag_to_string(clan_tag);
+    BnetClanInvitationCallbackData *callback_data = NULL;
+    
+    callback_data = g_new0(BnetClanInvitationCallbackData, 1);
+    callback_data->bnet = bnet;
+    callback_data->packet_id = BNET_SID_CLANINVITATIONRESPONSE;
+    callback_data->cookie = cookie;
+    callback_data->clan_tag = clan_tag;
+    callback_data->inviter = g_strdup(inviter_name);
+    callback_data->clan_name = g_strdup(clan_name);
+    
+    purple_request_action(bnet->account->gc, "Clan Invitation",
+            g_strdup_printf("You have been invited by %s to join Clan %s, %s!",
+            inviter_name, clan_tag_string, clan_name),
+            NULL,
+            0,
+            bnet->account,
+            NULL, NULL, 
+            callback_data,
+            2,
+            "_Decline", bnet_clan_invite_decline_cb,
+            "_Accept", bnet_clan_invite_accept_cb);
+    
+    g_free(clan_name);
+    g_free(inviter_name);
+    g_free(clan_tag_string);
+}
+
+static void
+bnet_recv_CLANRANKCHANGE(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+}
+
+static void
+bnet_recv_CLANMOTD(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+    PurpleConversation *conv = NULL;
+    PurpleConvChat *chat = NULL;
+    guint32 cookie;
+    gchar *motd;
+    
+    cookie = bnet_packet_read_dword(pkt);
+    bnet_packet_read_dword(pkt);
+    motd = bnet_packet_read_cstring(pkt);
+    
+    bnet_clan_packet_unregister(bnet->clan_info, BNET_SID_CLANMOTD, cookie);
+    bnet_clan_info_set_motd(bnet->clan_info, motd);
+    if (!bnet->first_join && bnet->channel_id != 0) {
+        conv = purple_find_chat(bnet->account->gc, bnet->channel_id);
+    }
+    if (conv != NULL) {
+        chat = purple_conversation_get_chat_data(conv);
+    }
+    if (chat != NULL && bnet_clan_is_clan_channel(bnet->clan_info, bnet->channel_name)) {
+        purple_conv_chat_set_topic(chat, "(clan leader)", motd);
+    }
+}
+
+static void
+bnet_recv_CLANMEMBERLIST(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+    guint32 cookie;
+    guint8 number_of_members;
+    
+    cookie = bnet_packet_read_dword(pkt);
+    
+    bnet_clan_packet_unregister(bnet->clan_info, BNET_SID_CLANMEMBERLIST, cookie);
+    
+    number_of_members = bnet_packet_read_byte(pkt);
+    
+    purple_debug_info("bnet", "Clan members: %d\n", number_of_members);
+}
+
+static void
+bnet_recv_CLANMEMBERREMOVED(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+}
+
+static void
+bnet_recv_CLANMEMBERSTATUSCHANGE(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+}
+
+static void
+bnet_recv_CLANMEMBERRANKCHANGE(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+}
+
+static void
+bnet_recv_CLANMEMBERINFORMATION(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+}
+
+static void
+bnet_parse_packet(BnetConnectionData *bnet, const guint8 packet_id, const guint8 *packet_start, const guint16 packet_len)
 {
     BnetPacket *pkt = NULL;
     
@@ -2576,6 +3571,15 @@ static void bnet_parse_packet(BnetConnectionData *bnet, guint8 packet_id, guint8
     switch (packet_id) {
         case BNET_SID_NULL:
             // do nothing bnet_recv_NULL();
+            break;
+        case BNET_SID_CLIENTID:
+            // do nothing bnet_recv_CLIENTID(bnet, pkt);
+            break;
+        case BNET_SID_STARTVERSIONING:
+            bnet_recv_STARTVERSIONING(bnet, pkt);
+            break;
+        case BNET_SID_REPORTVERSION:
+            bnet_recv_REPORTVERSION(bnet, pkt);
             break;
         case BNET_SID_ENTERCHAT:
             bnet_recv_ENTERCHAT(bnet, pkt);
@@ -2589,14 +3593,29 @@ static void bnet_parse_packet(BnetConnectionData *bnet, guint8 packet_id, guint8
         case BNET_SID_MESSAGEBOX:
             bnet_recv_MESSAGEBOX(bnet, pkt);
             break;
+        case BNET_SID_LOGONCHALLENGEEX:
+            bnet_recv_LOGONCHALLENGEEX(bnet, pkt);
+            break;
         case BNET_SID_PING:
             bnet_recv_PING(bnet, pkt);
             break;
         case BNET_SID_READUSERDATA:
             bnet_recv_READUSERDATA(bnet, pkt);
             break;
+        case BNET_SID_LOGONCHALLENGE:
+            bnet_recv_LOGONCHALLENGE(bnet, pkt);
+            break;
+        case BNET_SID_CDKEY:
+            bnet_recv_CDKEY(bnet, pkt);
+            break;
+        case BNET_SID_CDKEY2:
+            bnet_recv_CDKEY2(bnet, pkt);
+            break;
         case BNET_SID_CREATEACCOUNT2:
             bnet_recv_CREATEACCOUNT2(bnet, pkt);
+            break;
+        case BNET_SID_NEWS_INFO:
+            bnet_recv_NEWS_INFO(bnet, pkt);
             break;
         case BNET_SID_AUTH_INFO:
             bnet_recv_AUTH_INFO(bnet, pkt);
@@ -2628,8 +3647,56 @@ static void bnet_parse_packet(BnetConnectionData *bnet, guint8 packet_id, guint8
         case BNET_SID_FRIENDSPOSITION:
             bnet_recv_FRIENDSPOSITION(bnet, pkt);
             break;
+        case BNET_SID_CLANFINDCANDIDATES:
+            bnet_recv_CLANFINDCANDIDATES(bnet, pkt);
+            break;
+        case BNET_SID_CLANINVITEMULTIPLE:
+            bnet_recv_CLANINVITEMULTIPLE(bnet, pkt);
+            break;
         case BNET_SID_CLANCREATIONINVITATION:
             bnet_recv_CLANCREATIONINVITATION(bnet, pkt);
+            break;
+        case BNET_SID_CLANDISBAND:
+            bnet_recv_CLANDISBAND(bnet, pkt);
+            break;
+        case BNET_SID_CLANMAKECHIEFTAIN:
+            bnet_recv_CLANMAKECHIEFTAIN(bnet, pkt);
+            break;
+        case BNET_SID_CLANINFO:
+            bnet_recv_CLANINFO(bnet, pkt);
+            break;
+        case BNET_SID_CLANQUITNOTIFY:
+            bnet_recv_CLANQUITNOTIFY(bnet, pkt);
+            break;
+        case BNET_SID_CLANINVITATION:
+            bnet_recv_CLANINVITATION(bnet, pkt);
+            break;
+        case BNET_SID_CLANREMOVEMEMBER:
+            bnet_recv_CLANREMOVEMEMBER(bnet, pkt);
+            break;
+        case BNET_SID_CLANINVITATIONRESPONSE:
+            bnet_recv_CLANINVITATIONRESPONSE(bnet, pkt);
+            break;
+        case BNET_SID_CLANRANKCHANGE:
+            bnet_recv_CLANRANKCHANGE(bnet, pkt);
+            break;
+        case BNET_SID_CLANMOTD:
+            bnet_recv_CLANMOTD(bnet, pkt);
+            break;
+        case BNET_SID_CLANMEMBERLIST:
+            bnet_recv_CLANMEMBERLIST(bnet, pkt);
+            break;
+        case BNET_SID_CLANMEMBERREMOVED:
+            bnet_recv_CLANMEMBERREMOVED(bnet, pkt);
+            break;
+        case BNET_SID_CLANMEMBERSTATUSCHANGE:
+            bnet_recv_CLANMEMBERSTATUSCHANGE(bnet, pkt);
+            break;
+        case BNET_SID_CLANMEMBERRANKCHANGE:
+            bnet_recv_CLANMEMBERRANKCHANGE(bnet, pkt);
+            break;
+        case BNET_SID_CLANMEMBERINFORMATION:
+            bnet_recv_CLANMEMBERINFORMATION(bnet, pkt);
             break;
         default:
             // unhandled
@@ -2640,7 +3707,55 @@ static void bnet_parse_packet(BnetConnectionData *bnet, guint8 packet_id, guint8
     bnet_packet_free(pkt);
 }
 
-/*static void bnet_queue(BnetConnectionData *bnet, BnetQueueElement *qel)
+static void
+bnet_clan_invite_accept_cb(void *data, int act_index)
+{
+    BnetClanInvitationCallbackData *callback_data = data;
+    BnetConnectionData *bnet = callback_data->bnet;
+    BnetPacketID packet_id = callback_data->packet_id;
+    gint32 cookie = callback_data->cookie;
+    BnetClanTag clan_tag = callback_data->clan_tag;
+    gchar *inviter = callback_data->inviter;
+    gchar *clan_name = callback_data->clan_name;
+    
+    g_free(callback_data);
+    
+    if (packet_id == BNET_SID_CLANCREATIONINVITATION) {
+        bnet_send_CLANCREATIONINVITATION(bnet, cookie, clan_tag, inviter, TRUE);
+    } else if (packet_id == BNET_SID_CLANINVITATIONRESPONSE) {
+        bnet_send_CLANINVITATIONRESPONSE(bnet, cookie, clan_tag, inviter, TRUE);
+    }
+    
+    g_free(inviter);
+    g_free(clan_name);
+}
+
+static void
+bnet_clan_invite_decline_cb(void *data, int act_index)
+{
+    BnetClanInvitationCallbackData *callback_data = data;
+    BnetConnectionData *bnet = callback_data->bnet;
+    BnetPacketID packet_id = callback_data->packet_id;
+    gint32 cookie = callback_data->cookie;
+    BnetClanTag clan_tag = callback_data->clan_tag;
+    gchar *inviter = callback_data->inviter;
+    gchar *clan_name = callback_data->clan_name;
+    
+    g_free(callback_data);
+    
+    if (packet_id == BNET_SID_CLANCREATIONINVITATION) {
+        bnet_send_CLANCREATIONINVITATION(bnet, cookie, clan_tag, inviter, FALSE);
+    } else if (packet_id == BNET_SID_CLANINVITATIONRESPONSE) {
+        bnet_send_CLANINVITATIONRESPONSE(bnet, cookie, clan_tag, inviter, FALSE);
+    }
+    
+    g_free(inviter);
+    g_free(clan_name);
+}
+
+/*
+static void
+bnet_queue(const BnetConnectionData *bnet, BnetQueueElement *qel)
 {
     int delay = 1;
     delay += (bnet_packet_get_length(qel->pkt));
@@ -2649,7 +3764,8 @@ static void bnet_parse_packet(BnetConnectionData *bnet, guint8 packet_id, guint8
     g_queue_push_head(bnet->action_q, qel);
 }
 
-static void bnet_dequeue_tick(BnetConnectionData *bnet)
+static void
+bnet_dequeue_tick(const BnetConnectionData *bnet)
 {
     gboolean last_responded = FALSE;
     if (bnet->active_q_item) {
@@ -2668,7 +3784,8 @@ static void bnet_dequeue_tick(BnetConnectionData *bnet)
 }
 
 
-static int bnet_dequeue(BnetConnectionData *bnet)
+static int
+bnet_dequeue(const BnetConnectionData *bnet)
 {
     BnetQueueElement *qel = g_queue_pop_tail(bnet->action_q);
     int ret = -1;
@@ -2685,7 +3802,8 @@ static int bnet_dequeue(BnetConnectionData *bnet)
     return ret;
 }*/
 
-static gint bnet_channel_user_compare(gconstpointer a, gconstpointer b)
+static gint
+bnet_channel_user_compare(gconstpointer a, gconstpointer b)
 {
     const BnetChannelUser *bcu = a;
     const char *usr = b;
@@ -2707,7 +3825,8 @@ static gint bnet_channel_user_compare(gconstpointer a, gconstpointer b)
     return cmp;
 }
 
-static PurpleCmdRet bnet_handle_cmd(PurpleConversation *conv, const gchar *cmdword,
+static PurpleCmdRet
+bnet_handle_cmd(PurpleConversation *conv, const gchar *cmdword,
                                   gchar **args, gchar **error, void *data)
 {
     struct BnetCommand *c = data;
@@ -2806,7 +3925,8 @@ static PurpleCmdRet bnet_handle_cmd(PurpleConversation *conv, const gchar *cmdwo
     return PURPLE_CMD_RET_OK;
 }
 
-static double get_tz_bias(void)
+static double
+bnet_get_tz_bias(void)
 {
     time_t t_local, t_utc;
     struct tm *tm_utc = NULL;
@@ -2818,7 +3938,8 @@ static double get_tz_bias(void)
     return difftime(t_utc, t_local);
 }
 
-static char *bnet_format_time(guint64 unixtime)
+static char *
+bnet_format_time(guint64 unixtime)
 {
     time_t ut = 0;
     struct tm *t = NULL;
@@ -2831,7 +3952,8 @@ static char *bnet_format_time(guint64 unixtime)
 
 #define FILETIME_TICK 10000000LL
 #define FILETIME_TO_UNIXTIME_DIFF 11644473600LL
-static char *bnet_format_filetime(char *ftime_str)
+static char *
+bnet_format_filetime(char *ftime_str)
 {
     struct FILETIME {
         guint32 dwHighDateTime;
@@ -2860,7 +3982,19 @@ static char *bnet_format_filetime(char *ftime_str)
     return bnet_format_time(ut);
 }
 
-static char *bnet_format_strsec(char *secs_str)
+static guint64
+bnet_get_filetime(time_t time)
+{
+    guint64 ft; // filetime
+    guint64 ut; // unixtime
+    ut = time;
+    ft = (ut + FILETIME_TO_UNIXTIME_DIFF) * FILETIME_TICK;
+    
+    return ft;
+}
+
+static char *
+bnet_format_strsec(char *secs_str)
 {
     char *days_str;
     
@@ -2882,7 +4016,8 @@ static char *bnet_format_strsec(char *secs_str)
     return g_strdup_printf("%d%s%02d:%02d:%02d", days, days_str, hrs, mins, secs);
 }
 
-static void bnet_friend_update(BnetConnectionData *bnet, int index,
+static void
+bnet_friend_update(const BnetConnectionData *bnet, int index,
         BnetFriendInfo *bfi, BnetFriendStatus status,
         BnetFriendLocation location, BnetProductID product_id,
         const gchar *location_name)
@@ -2921,12 +4056,12 @@ static void bnet_friend_update(BnetConnectionData *bnet, int index,
     }
     
     if (bfi->location == BNET_FRIEND_LOCATION_OFFLINE) {
+        purple_prpl_got_user_status(bnet->account, bfi->account,
+                BNET_STATUS_OFFLINE, NULL);
         purple_prpl_got_user_status_deactive(bnet->account, bfi->account,
                 BNET_STATUS_AWAY);
         purple_prpl_got_user_status_deactive(bnet->account, bfi->account,
                 BNET_STATUS_DND);
-        purple_prpl_got_user_status(bnet->account, bfi->account,
-                BNET_STATUS_OFFLINE, NULL);
     } else {
         purple_prpl_got_user_status(bnet->account, bfi->account,
                 BNET_STATUS_ONLINE, NULL);
@@ -2959,7 +4094,8 @@ static void bnet_friend_update(BnetConnectionData *bnet, int index,
     }
 }
 
-static void bnet_close(PurpleConnection *gc)
+static void
+bnet_close(PurpleConnection *gc)
 {
     BnetConnectionData *bnet = gc->proto_data;
     if (bnet != NULL) {
@@ -2967,42 +4103,75 @@ static void bnet_close(PurpleConnection *gc)
         purple_input_remove(bnet->sbnet.inpa);
         bnet->first_join = FALSE;
         bnet->is_online = FALSE;
-        
+        bnet->sent_enter_channel = FALSE;
+        purple_debug_info("bnet", "free ka_handle\n");
         if (bnet->ka_handle != 0) {
             purple_timeout_remove(bnet->ka_handle);
             bnet->ka_handle = 0;
         }
-        
-        close(bnet->sbnls.fd);
-        if (bnet->sbnls.inbuf != NULL) {
-            g_free(bnet->sbnls.inbuf);
-            bnet->sbnls.inbuf = NULL;
+        purple_debug_info("bnet", "free sbnls.fd\n");
+        if (bnet->sbnls.fd != 0) {
+            purple_input_remove(bnet->sbnls.inpa);
+            close(bnet->sbnls.fd);
+            bnet->sbnls.fd = 0;
         }
+        purple_debug_info("bnet", "free bnls_server\n");
         if (bnet->bnls_server != NULL) {
             g_free(bnet->bnls_server);
             bnet->bnls_server = NULL;
         }
-        close(bnet->sbnet.fd);
-        if (bnet->sbnet.inbuf != NULL) {
-            g_free(bnet->sbnet.inbuf);
-            bnet->sbnet.inbuf = NULL;
+        purple_debug_info("bnet", "free sbnet.fd\n");
+        if (bnet->sbnet.fd != 0) {
+            purple_input_remove(bnet->sbnet.inpa);
+            close(bnet->sbnet.fd);
+            bnet->sbnet.fd = 0;
         }
+        purple_debug_info("bnet", "free username\n");
         if (bnet->username != NULL) {
             g_free(bnet->username);
             bnet->username = NULL;
         }
+        purple_debug_info("bnet", "free my_statstring\n");
+        if (bnet->my_statstring != NULL) {
+            g_free(bnet->my_statstring);
+            bnet->my_statstring = NULL;
+        }
+        purple_debug_info("bnet", "free my_accountname\n");
+        if (bnet->my_accountname != NULL) {
+            g_free(bnet->my_accountname);
+            bnet->my_accountname = NULL;
+        }
+        purple_debug_info("bnet", "free unique_username\n");
         if (bnet->unique_username != NULL) {
             g_free(bnet->unique_username);
             bnet->unique_username = NULL;
         }
+        purple_debug_info("bnet", "free clan_info\n");
+        if (bnet->clan_info != NULL) {
+            bnet_clan_info_free(bnet->clan_info);
+            bnet->clan_info = NULL;
+        }
+        purple_debug_info("bnet", "free news\n");
+        if (bnet->news != NULL) {
+            GList *el = g_list_first(bnet->news);
+            do {
+                bnet_news_item_free(el->data);
+                el = g_list_next(el);
+            } while (el != NULL);
+            g_list_free(bnet->news);
+            bnet->news = NULL;
+        }
+        purple_debug_info("bnet", "free server\n");
         if (bnet->server != NULL) {
             g_free(bnet->server);
             bnet->server = NULL;
         }
+        purple_debug_info("bnet", "free account_data\n");
         if (bnet->account_data != NULL) {
             srp_free(bnet->account_data);
             bnet->account_data = NULL;
         }
+        purple_debug_info("bnet", "free last_sent_to\n");
         if (bnet->last_sent_to != NULL) {
             g_free(bnet->last_sent_to);
             bnet->last_sent_to = NULL;
@@ -3016,7 +4185,8 @@ static void bnet_close(PurpleConnection *gc)
 // bnet doesn't allow anything below ' ' (nulls, tabs, or newlines), so this function is pointless
 // but...
 // this function ignores the len if > than any NULs, but otherwise sends anything you put into it
-static int bnet_send_raw(PurpleConnection *gc, const char *buf, int len)
+static int
+bnet_send_raw(PurpleConnection *gc, const char *buf, int len)
 {
     BnetConnectionData *bnet = gc->proto_data;
     char *mybuf = g_strdup(buf);
@@ -3046,7 +4216,8 @@ static int bnet_send_raw(PurpleConnection *gc, const char *buf, int len)
      * some other negative value.  You can use one of the valid
      * errno values, or just big something.  If the message should
      * not be echoed to the conversation window, return 0.*/
-static int bnet_send_whisper(PurpleConnection *gc, const char *who,
+static int
+bnet_send_whisper(PurpleConnection *gc, const char *who,
                              const char *message, PurpleMessageFlags flags)
 {
     BnetConnectionData *bnet = gc->proto_data;
@@ -3087,7 +4258,8 @@ static int bnet_send_whisper(PurpleConnection *gc, const char *who,
      * Should arrange for purple_notify_userinfo() to be called with
      * @a who's user info.
      */
-static void bnet_get_info(PurpleConnection *gc, const char *who)
+static void
+bnet_get_info(PurpleConnection *gc, const char *who)
 {
     BnetConnectionData *bnet = gc->proto_data;
     const char *norm = bnet_normalize(bnet->account, who);
@@ -3098,7 +4270,8 @@ static void bnet_get_info(PurpleConnection *gc, const char *who)
     bnet_profiledata_user(bnet, bnet->lookup_user);
 }
 
-static void bnet_whois_complete(gpointer user_data)
+static void
+bnet_whois_complete(gpointer user_data)
 {
     BnetConnectionData *bnet = (BnetConnectionData *)user_data;
     if (bnet->lookup_user != NULL) {
@@ -3111,7 +4284,8 @@ static void bnet_whois_complete(gpointer user_data)
     }
 }
 
-static void bnet_whois_user(BnetConnectionData *bnet, const char *who)
+static void
+bnet_whois_user(const BnetConnectionData *bnet, const char *who)
 {
     char *cmd = g_strdup_printf("/whois %s%s",
                 bnet->d2_star, who);
@@ -3119,14 +4293,12 @@ static void bnet_whois_user(BnetConnectionData *bnet, const char *who)
     g_free(cmd);
 }
 
-static void bnet_profiledata_user(BnetConnectionData *bnet, const char *who)
+static void
+bnet_profiledata_user(BnetConnectionData *bnet, const char *who)
 {
-    gchar *profile_request = BNET_USERDATA_PROFILE_REQUEST;
-    gchar *system_request = BNET_USERDATA_SYSTEM_REQUEST;
-    gchar *record_request = BNET_USERDATA_RECORD_REQUEST;
-    gchar *recordl_request = BNET_USERDATA_RECORD_LADDER_REQUEST;
     gchar *final_request;
     BnetUserDataRequest *req;
+    BnetUserDataRequestType request_type;
     gboolean is_self = FALSE;
     int recordbits = 0;
     char **keys;
@@ -3136,10 +4308,10 @@ static void bnet_profiledata_user(BnetConnectionData *bnet, const char *who)
     const char *uu_norm = bnet_normalize(bnet->account, bnet->unique_username);
     
     if (strcmp(uu_norm, acct_norm) == 0) {
-        final_request = g_strdup_printf("%s\n%s", profile_request, system_request);
+        final_request = g_strdup_printf("%s\n%s", BNET_USERDATA_PROFILE_REQUEST, BNET_USERDATA_SYSTEM_REQUEST);
         is_self = TRUE;
     } else {
-        final_request = profile_request;
+        final_request = g_strdup(BNET_USERDATA_PROFILE_REQUEST);
     }
     
     switch (bnet->game) {
@@ -3168,65 +4340,183 @@ static void bnet_profiledata_user(BnetConnectionData *bnet, const char *who)
     }
     
     if (recordbits & BNET_RECORD_NORMAL) {
-        char *product_id = get_product_id_str(bnet->product_id);
-        char *tmp = g_strdup_printf("%s\n%s", final_request,
-                    g_strdup_printf(record_request, product_id, 0,
-                                                    product_id, 0,
-                                                    product_id, 0,
-                                                    product_id, 0,
-                                                    product_id, 0));
-        final_request = tmp;
+        char *product_id = bnet_get_product_id_str(bnet->product_id);
+        char *request_part = g_strdup_printf(BNET_USERDATA_RECORD_REQUEST(product_id, BNET_USERDATA_RECORD_NORMAL));
+        char *request_combined = g_strdup_printf("%s\n%s", final_request, request_part);
+        g_free(final_request);
+        final_request = request_combined;
         g_free(product_id);
+        g_free(request_part);
     }
     
     if (recordbits & BNET_RECORD_LADDER) {
-        char *product_id = get_product_id_str(bnet->product_id);
-        char *tmp = g_strdup_printf("%s\n%s", final_request,
-                    g_strdup_printf(recordl_request, product_id, 1,
-                                                     product_id, 1,
-                                                     product_id, 1,
-                                                     product_id, 1,
-                                                     product_id, 1,
-                                                     product_id, 1,
-                                                     product_id, 1,
-                                                     product_id, 1,
-                                                     product_id, 1));
-        final_request = tmp;
+        char *product_id = bnet_get_product_id_str(bnet->product_id);
+        char *request_part = g_strdup_printf(BNET_USERDATA_RECORD_LADDER_REQUEST(product_id, BNET_USERDATA_RECORD_LADDER));
+        char *request_combined = g_strdup_printf("%s\n%s", final_request, request_part);
+        g_free(final_request);
+        final_request = request_combined;
         g_free(product_id);
+        g_free(request_part);
     }
     
     if (recordbits & BNET_RECORD_IRONMAN) {
-        char *product_id = get_product_id_str(bnet->product_id);
-        char *tmp = g_strdup_printf("%s\n%s", final_request,
-                    g_strdup_printf(recordl_request, product_id, 3,
-                                                     product_id, 3,
-                                                     product_id, 3,
-                                                     product_id, 3,
-                                                     product_id, 3,
-                                                     product_id, 3,
-                                                     product_id, 3,
-                                                     product_id, 3,
-                                                     product_id, 3));
-        final_request = tmp;
+        char *product_id = bnet_get_product_id_str(bnet->product_id);
+        char *request_part = g_strdup_printf(BNET_USERDATA_RECORD_LADDER_REQUEST(product_id, BNET_USERDATA_RECORD_IRONMAN));
+        char *request_combined = g_strdup_printf("%s\n%s", final_request, request_part);
+        g_free(final_request);
+        final_request = request_combined;
         g_free(product_id);
+        g_free(request_part);
     }
     
     keys = g_strsplit(final_request, "\n", -1);
     
-    req = g_new0(BnetUserDataRequest, 1);
-    req->cookie = request_cookie;
-    req->request_type = BNET_READUSERDATA_REQUEST_PROFILE |
-                        ((is_self) ? BNET_READUSERDATA_REQUEST_SYSTEM : 0) |
-                        ((recordbits == BNET_RECORD_NONE) ? 0 : BNET_READUSERDATA_REQUEST_RECORD);
-    req->username = g_strdup(acct_norm);
-    req->userdata_keys = keys;
-    req->product = bnet->product_id;
+    request_type = BNET_READUSERDATA_REQUEST_PROFILE |
+                   ((is_self) ? BNET_READUSERDATA_REQUEST_SYSTEM : 0) |
+                   ((recordbits == BNET_RECORD_NONE) ? 0 : BNET_READUSERDATA_REQUEST_RECORD);
+    
+    req = bnet_userdata_request_new(request_cookie, request_type,
+                                    acct_norm, keys,
+                                    bnet->product_id);
+    
     bnet->userdata_requests = g_list_append(bnet->userdata_requests, req);
     
     bnet_send_READUSERDATA(bnet, request_cookie, acct_norm, keys);
+    
+    g_free(final_request);
 }
 
-static void bnet_action_set_user_data(PurplePluginAction *action)
+static void
+bnet_action_set_motd_cb(gpointer data)
+{
+    BnetConnectionData *bnet;
+    PurpleRequestFields *fields;
+    GList *group_list; PurpleRequestFieldGroup *group;
+    GList *field_list; PurpleRequestField *field;
+    const char *motd;
+    
+    bnet = data;
+    if (bnet == NULL) return;
+    fields = bnet->set_motd_fields;
+    if (fields == NULL) return;
+    group_list = g_list_first(purple_request_fields_get_groups(fields));
+    if (group_list == NULL) return;
+    group = group_list->data; // only one group
+    if (group == NULL) return;
+    field_list = g_list_first(purple_request_field_group_get_fields(group));
+    if (field_list == NULL) return;
+    field = field_list->data; // only one field
+    motd = purple_request_field_string_get_value(field);
+    
+    bnet_send_CLANSETMOTD(bnet, 0xbaadf00du, motd);
+}
+
+static gint
+bnet_news_item_sort(gconstpointer a, gconstpointer b)
+{
+    const BnetNewsItem *news_a = a;
+    const BnetNewsItem *news_b = b;
+    if (news_a->timestamp == 0) {
+        if (news_b->timestamp == 0) {
+            return 0;
+        }
+        return -1;
+    } else if (news_b->timestamp == 0) {
+        return 1;
+    }
+    
+    return news_b->timestamp - news_a->timestamp;
+}
+
+static void
+bnet_action_show_news(PurplePluginAction *action)
+{
+    PurpleConnection *gc = action->context;
+    BnetConnectionData *bnet = gc->proto_data;
+    GList *el = NULL;
+    gchar *formatted = g_malloc0(1);
+    
+    bnet->news = g_list_sort(bnet->news, bnet_news_item_sort);
+    
+    el = g_list_first(bnet->news);
+    do {
+        BnetNewsItem *item = el->data;
+        gchar *add = NULL;
+        gchar *sum = NULL;
+        if (item->timestamp == 0) {
+            add = g_strdup_printf("<b>Message of the Day</b><br>%s<br><br>", item->message);
+        } else {
+            gchar *tm = bnet_format_time(item->timestamp);
+            add = g_strdup_printf("<b>%s</b><br>%s<br><br>", tm, item->message);
+            g_free(tm);
+        }
+        sum = g_strdup_printf("%s%s", formatted, add);
+        g_free(add);
+        g_free(formatted);
+        formatted = sum;
+        
+        el = g_list_next(el);
+    } while (el != NULL);
+    
+    if (strlen(formatted) == 0) {
+        g_free(formatted);
+        formatted = g_strdup("<i>No news returned.</i>");
+    }
+    purple_notify_formatted(bnet->account->gc, "Battle.net News",
+        "News for this Battle.net server.", NULL, formatted, NULL, NULL);
+    
+    g_free(formatted);
+}
+
+static void
+bnet_action_set_motd(PurplePluginAction *action)
+{
+    PurpleConnection *gc = action->context;
+    BnetConnectionData *bnet = gc->proto_data;
+    PurpleRequestField *field = NULL;
+    PurpleRequestFields *fields = NULL;
+    PurpleRequestFieldGroup *group = NULL;
+    BnetClanMemberRank my_rank = 0;
+    BnetClanTag tag = 0;
+    gchar *tag_string = NULL;
+    gchar *current_motd = NULL;
+    
+    if (bnet == NULL) return;
+    if (bnet->clan_info == NULL) return;
+    
+    my_rank = bnet_clan_info_get_my_rank(bnet->clan_info);
+    
+    if (my_rank != BNET_CLAN_RANK_SHAMAN &&
+        my_rank != BNET_CLAN_RANK_CHIEFTAIN) return;
+    
+    tag = bnet_clan_info_get_tag(bnet->clan_info);
+    tag_string = bnet_clan_tag_to_string(tag);
+    
+    current_motd = bnet_clan_info_get_motd(bnet->clan_info);
+    
+    fields = purple_request_fields_new();
+    group = purple_request_field_group_new(
+            g_strdup_printf("Set clan MOTD for Clan %s", tag_string));
+    
+    field = purple_request_field_string_new("motd", "Message of the Day", current_motd, FALSE);
+    purple_request_field_string_set_editable(field, TRUE);
+    purple_request_field_set_required(field, TRUE);
+    purple_request_field_string_set_value(field, current_motd);
+    purple_request_field_group_add_field(group, field);
+    
+    purple_request_fields_add_group(fields, group);
+    
+    bnet->set_motd_fields = fields;
+    
+    purple_request_fields(gc, "Edit Clan MOTD", "Change this WarCraft III clan's MOTD.", NULL, fields,
+            "Save", (GCallback)bnet_action_set_motd_cb, "Cancel", NULL,
+            bnet->account, NULL, NULL, bnet);
+    
+    g_free(tag_string);
+}
+
+static void
+bnet_action_set_user_data(PurplePluginAction *action)
 {
     PurpleConnection *gc = action->context;
     BnetConnectionData *bnet = gc->proto_data;
@@ -3236,31 +4526,29 @@ static void bnet_action_set_user_data(PurplePluginAction *action)
     bnet_profile_get_for_edit(bnet);
 }
 
-static void bnet_profile_get_for_edit(BnetConnectionData *bnet)
+static void
+bnet_profile_get_for_edit(BnetConnectionData *bnet)
 {
-    gchar *profile_request = BNET_USERDATA_PROFILE_REQUEST;
     const char *uu_norm = bnet_normalize(bnet->account, bnet->unique_username);
     int request_cookie = g_str_hash(uu_norm);
     BnetUserDataRequest *req;
     char **keys;
     
-    keys = g_strsplit(profile_request, "\n", -1);
+    keys = g_strsplit(BNET_USERDATA_PROFILE_REQUEST, "\n", -1);
     
     bnet->writing_profile = TRUE;
     
-    req = g_new0(BnetUserDataRequest, 1);
-    req->cookie = request_cookie;
-    req->request_type = BNET_READUSERDATA_REQUEST_PROFILE;
-    req->username = bnet->unique_username;
-    req->userdata_keys = keys;
-    req->product = bnet->product_id;
+    req = bnet_userdata_request_new(request_cookie, BNET_READUSERDATA_REQUEST_PROFILE,
+                                    bnet->unique_username, keys, bnet->product_id);
+    
     bnet->userdata_requests = g_list_append(bnet->userdata_requests, req);
     
     bnet_send_READUSERDATA(bnet, request_cookie, bnet->unique_username, keys);
 }
 
-static void bnet_profile_show_write_dialog(BnetConnectionData *bnet,
-        char *psex, char *page, char *ploc, char *pdescr)
+static void
+bnet_profile_show_write_dialog(BnetConnectionData *bnet,
+        const char *psex, const char *page, const char *ploc, const char *pdescr)
 {
     PurpleRequestField *field;
     PurpleRequestFields *fields = purple_request_fields_new();
@@ -3302,7 +4590,8 @@ static void bnet_profile_show_write_dialog(BnetConnectionData *bnet,
             bnet->account, bnet->username, NULL, bnet);
 }
 
-static void bnet_profile_write_cb(gpointer data)
+static void
+bnet_profile_write_cb(gpointer data)
 {
     BnetConnectionData *bnet;
     PurpleRequestFields *fields;
@@ -3341,7 +4630,8 @@ static void bnet_profile_write_cb(gpointer data)
     //purple_request_fields_destroy(fields);
 }
 
-static gboolean bnet_channeldata_user(BnetConnectionData *bnet, const char *who)
+static gboolean
+bnet_channeldata_user(BnetConnectionData *bnet, const char *who)
 {
     GList *li = g_list_find_custom(bnet->channel_users, who, bnet_channel_user_compare);
     BnetChannelUser *bcu;
@@ -3430,7 +4720,7 @@ static gboolean bnet_channeldata_user(BnetConnectionData *bnet, const char *who)
     }
     
     product_id = *((guint32 *)(void *)bcu->stats_data);
-    product = get_product_name(product_id);
+    product = bnet_get_product_name(product_id);
     
     purple_notify_user_info_add_pair(bnet->lookup_info, "Current location", bnet->channel_name);
     purple_notify_user_info_add_pair(bnet->lookup_info, "Current product", product);
@@ -3580,7 +4870,7 @@ static gboolean bnet_channeldata_user(BnetConnectionData *bnet, const char *who)
                 purple_notify_user_info_add_pair(bnet->lookup_info, "Character gold", tmp);
                 g_free(tmp);
             }
-            purple_notify_user_info_add_pair(bnet->lookup_info, "Spawned/shareware client", spawn ? "Yes" : "No");
+            purple_notify_user_info_add_pair(bnet->lookup_info, "Spawned client", spawn ? "Yes" : "No");
             break;
         }
         case BNET_PRODUCT_D2DV:
@@ -3723,7 +5013,8 @@ static gboolean bnet_channeldata_user(BnetConnectionData *bnet, const char *who)
     return TRUE;
 }
 
-static GHashTable *bnet_chat_info_defaults(PurpleConnection *gc, const char *chat_name)
+static GHashTable *
+bnet_chat_info_defaults(PurpleConnection *gc, const char *chat_name)
 {
     GHashTable *defaults;
 
@@ -3735,7 +5026,8 @@ static GHashTable *bnet_chat_info_defaults(PurpleConnection *gc, const char *cha
     return defaults;
 }
 
-static GList *bnet_chat_info(PurpleConnection *gc)
+static GList *
+bnet_chat_info(PurpleConnection *gc)
 {
     GList *m = NULL;
     struct proto_chat_entry *pce;
@@ -3749,13 +5041,15 @@ static GList *bnet_chat_info(PurpleConnection *gc)
     return m;
 }
 
-static char *bnet_channel_message_parse(char *stats_data, BnetChatEventFlags flags, int ping)
+static char *
+bnet_channel_message_parse(char *stats_data, BnetChatEventFlags flags, int ping)
 {
     BnetProductID product_id = *((guint32 *)(stats_data));
-    return g_strdup_printf("%dms using %s", ping, get_product_name(product_id));
+    return g_strdup_printf("%dms using %s", ping, bnet_get_product_name(product_id));
 }
 
-static PurpleConvChatBuddyFlags bnet_channel_flags_to_prpl_flags(BnetChatEventFlags flags)
+static PurpleConvChatBuddyFlags
+bnet_channel_flags_to_prpl_flags(BnetChatEventFlags flags)
 {
     PurpleConvChatBuddyFlags result = 0;
     if (flags & BNET_USER_FLAG_BLIZZREP ||
@@ -3771,7 +5065,8 @@ static PurpleConvChatBuddyFlags bnet_channel_flags_to_prpl_flags(BnetChatEventFl
     return result;
 }
 
-static void bnet_join_chat(PurpleConnection *gc, GHashTable *components)
+static void
+bnet_join_chat(PurpleConnection *gc, GHashTable *components)
 {
     BnetConnectionData *bnet = gc->proto_data;
     char *room = g_hash_table_lookup(components, "channel");
@@ -3788,32 +5083,45 @@ static void bnet_join_chat(PurpleConnection *gc, GHashTable *components)
         }
     }
     
+    purple_debug_info("bnet", "Attempting to join channel %s...\n", room);
+    
     norm = bnet_normalize(bnet->account, room);
     chat_id = g_str_hash(norm);
     
     if (bnet->channel_id == chat_id) {
+        PurpleConversation *conv = NULL;
+        
         serv_got_chat_left(gc, bnet->channel_id);
         
         bnet->channel_id = chat_id;
         
-        serv_got_joined_chat(gc, chat_id, room);
+        conv = serv_got_joined_chat(gc, chat_id, room);
         
         if (bnet->channel_users != NULL) {
-            PurpleConversation *conv = NULL;
             PurpleConvChat *chat = NULL;
-            if (!bnet->first_join && bnet->channel_id != 0)
-                conv = purple_find_chat(gc, bnet->channel_id);
-            if (conv != NULL)
+            if (!bnet->first_join && conv != NULL)
                 chat = purple_conversation_get_chat_data(conv);
             if (chat != NULL) {
-                GList *li = g_list_first(bnet->channel_users);
-                while (li != NULL) {
-                    BnetChannelUser *bcu = li->data;
-                    purple_conv_chat_add_user(chat, bcu->username,
-                             bnet_channel_message_parse(bcu->stats_data, bcu->flags, bcu->ping),
-                             bnet_channel_flags_to_prpl_flags(bcu->flags), FALSE);
-                    li = g_list_next(li);
+                GList *users = NULL;
+                GList *extras = NULL;
+                GList *flags = NULL;
+                GList *el = g_list_first(bnet->channel_users);
+                //int i = 0;
+                while (el != NULL) {
+                    BnetChannelUser *bcuel = el->data;
+                    int bcuelflags = bnet_channel_flags_to_prpl_flags(bcuel->flags);
+                    
+                    users = g_list_prepend(users, bcuel->username);
+                    extras = g_list_prepend(extras, bnet_channel_message_parse(bcuel->stats_data, bcuel->flags, bcuel->ping));
+                    flags = g_list_prepend(flags, (void *)bcuelflags);
+                    //i++;
+                    //purple_debug_info("bnet", "%d: %s status: %d\n", i, bcuel->username, bcuel->status);
+                    el = g_list_next(el);
                 }
+                purple_conv_chat_add_users(chat, users, extras, flags, FALSE);
+                g_list_free(users);
+                g_list_free(extras);
+                g_list_free(flags);
             }
         }
         
@@ -3827,7 +5135,8 @@ static void bnet_join_chat(PurpleConnection *gc, GHashTable *components)
     g_free(cmd);
 }
 
-static int bnet_chat_im(PurpleConnection *gc, int chat_id, const char *message, PurpleMessageFlags flags)
+static int
+bnet_chat_im(PurpleConnection *gc, int chat_id, const char *message, PurpleMessageFlags flags)
 {
     BnetConnectionData *bnet = gc->proto_data;
     char *msg_nohtml;
@@ -3869,71 +5178,81 @@ static int bnet_chat_im(PurpleConnection *gc, int chat_id, const char *message, 
     }
 }
 
-static const char *bnet_list_icon(PurpleAccount *a, PurpleBuddy *b)
+static const char *
+bnet_list_icon(PurpleAccount *a, PurpleBuddy *b)
 {
     //star, sexp, d2dv, d2xp, w2bn, war3, w3xp, drtl, chat
     return "bnet";
 }
 
-static const char *bnet_list_emblem(PurpleBuddy *b)
+static const char *
+bnet_list_emblem(PurpleBuddy *b)
 {
-    BnetFriendInfo *bfi = purple_buddy_get_protocol_data(b);
-    if (bfi != NULL && bfi->location >= BNET_FRIEND_LOCATION_GAME_PUBLIC) {
-        return "game";
-    } else if (bfi == NULL) {
-        return "not-authorized";
+    BnetUser *bfi = purple_buddy_get_protocol_data(b);
+    if (bfi == NULL) {
+        return "not authorized";
+    } else if (bfi->type == BNET_USER_TYPE_FRIEND) {
+        if (((BnetFriendInfo *)bfi)->location >= BNET_FRIEND_LOCATION_GAME_PUBLIC) {
+            return "game";
+        } else {
+            return NULL;
+        }
     } else {
         return NULL;
     }
 }
 
-static char *bnet_status_text(PurpleBuddy *b)
+static char *
+bnet_status_text(PurpleBuddy *b)
 {
-    BnetFriendInfo *bfi = purple_buddy_get_protocol_data(b);
-    if (bfi == NULL)
+    BnetUser *bfi = purple_buddy_get_protocol_data(b);
+    if (bfi == NULL) {
         return NULL;
-    else if (bfi->stored_status != NULL)
-        return bfi->stored_status;
-    else
+    } else if (bfi->type == BNET_USER_TYPE_FRIEND && ((BnetFriendInfo *)bfi)->stored_status != NULL) {
+        return ((BnetFriendInfo *)bfi)->stored_status;
+    } else {
         return NULL;
+    }
 }
 
-static void bnet_tooltip_text(PurpleBuddy *buddy,
+static void
+bnet_tooltip_text(PurpleBuddy *buddy,
                        PurpleNotifyUserInfo *info,
                        gboolean full)
 {
-    BnetFriendInfo *bfi = purple_buddy_get_protocol_data(buddy);
+    BnetUser *bfi = purple_buddy_get_protocol_data(buddy);
     purple_debug_info("bnet", "poll buddy tooltip %s \n", buddy->name);
     if (bfi == NULL) {
         // no information saved
         if (full) {
             purple_notify_user_info_add_pair(info, "Status", "Not on Battle.net's friend list.");
         }
-    } else if (bfi->location != BNET_FRIEND_LOCATION_OFFLINE) {
+    } else if (bfi->type == BNET_USER_TYPE_FRIEND && ((BnetFriendInfo *)bfi)->location != BNET_FRIEND_LOCATION_OFFLINE) {
         // add things to online friends
         purple_notify_user_info_add_pair(info, "Has you",
-                (bfi->status & BNET_FRIEND_STATUS_MUTUAL) ? "Yes" : "No");
+                (((BnetFriendInfo *)bfi)->status & BNET_FRIEND_STATUS_MUTUAL) ? "Yes" : "No");
         
         if (full) {
             purple_notify_user_info_add_pair(info, "Location",
-                    get_location_text(bfi->location, bfi->location_name));
+                    bnet_get_location_text(((BnetFriendInfo *)bfi)->location, ((BnetFriendInfo *)bfi)->location_name));
             purple_notify_user_info_add_pair(info, "Product",
-                    get_product_name(bfi->product));
+                    bnet_get_product_name(((BnetFriendInfo *)bfi)->product));
         }
         
-        if (bfi->status & BNET_FRIEND_STATUS_DND) {
+        if (((BnetFriendInfo *)bfi)->status & BNET_FRIEND_STATUS_DND) {
             purple_notify_user_info_add_pair(info, "Status",
-                    g_strdup_printf("Do Not Disturb - %s", bfi->stored_status));
-        } else if (bfi->status & BNET_FRIEND_STATUS_AWAY) {
+                    g_strdup_printf("Do Not Disturb - %s", ((BnetFriendInfo *)bfi)->stored_status));
+        } else if (((BnetFriendInfo *)bfi)->status & BNET_FRIEND_STATUS_AWAY) {
             purple_notify_user_info_add_pair(info, "Status",
-                    g_strdup_printf("Away - %s", bfi->stored_status));
+                    g_strdup_printf("Away - %s", ((BnetFriendInfo *)bfi)->stored_status));
         } else {
             purple_notify_user_info_add_pair(info, "Status", "Available");
         }
     }
 }
 
-static char *get_location_text(BnetFriendLocation location, char *location_name)
+static char *
+bnet_get_location_text(BnetFriendLocation location, char *location_name)
 {
     switch (location)
     {
@@ -3969,7 +5288,8 @@ static char *get_location_text(BnetFriendLocation location, char *location_name)
     }
 }
 
-static char *get_product_name(BnetProductID product)
+static char *
+bnet_get_product_name(BnetProductID product)
 {
     switch (product)
     {
@@ -4013,10 +5333,11 @@ static char *get_product_name(BnetProductID product)
     }
 }
 
-static char *get_product_id_str(BnetProductID product)
+static gchar *
+bnet_get_product_id_str(BnetProductID product)
 {
     guint32 *pproduct;
-    char *ret;
+    gchar *ret;
     
     switch (product)
     {
@@ -4035,15 +5356,16 @@ static char *get_product_id_str(BnetProductID product)
     
     pproduct = &product;
     ret = g_malloc0(5);
-    ret[0] = *(((char *)pproduct) + 3);
-    ret[1] = *(((char *)pproduct) + 2);
-    ret[2] = *(((char *)pproduct) + 1);
-    ret[3] = *(((char *)pproduct) + 0);
-    ret[4] = 0;
+    ret[0] = *(((gchar *)pproduct) + 3);
+    ret[1] = *(((gchar *)pproduct) + 2);
+    ret[2] = *(((gchar *)pproduct) + 1);
+    ret[3] = *(((gchar *)pproduct) + 0);
+    ret[4] = '\0';
     return ret;
 }
 
-static GList *bnet_status_types(PurpleAccount *account)
+static GList *
+bnet_status_types(PurpleAccount *account)
 {
     PurpleStatusType *type;
     GList *types = NULL;
@@ -4071,7 +5393,8 @@ static GList *bnet_status_types(PurpleAccount *account)
     return types;
 }
 
-static void bnet_add_buddy(PurpleConnection *gc, PurpleBuddy *buddy, PurpleGroup *group)
+static void
+bnet_add_buddy(PurpleConnection *gc, PurpleBuddy *buddy, PurpleGroup *group)
 {
     BnetConnectionData *bnet = gc->proto_data;
     
@@ -4083,24 +5406,28 @@ static void bnet_add_buddy(PurpleConnection *gc, PurpleBuddy *buddy, PurpleGroup
     g_free(cmd);
 }
 
-static void bnet_remove_buddy(PurpleConnection *gc, PurpleBuddy *buddy, PurpleGroup *group)
+static void
+bnet_remove_buddy(PurpleConnection *gc, PurpleBuddy *buddy, PurpleGroup *group)
 {
     BnetConnectionData *bnet = gc->proto_data;
     
     const char *username = purple_buddy_get_name(buddy);
-    BnetFriendInfo *bfi = purple_buddy_get_protocol_data(buddy);
+    BnetUser *bfi = purple_buddy_get_protocol_data(buddy);
     
     char *cmd;
     
     // the buddy wasn't on our friends list
     if (bfi == NULL) return;
     
-    cmd = g_strdup_printf("/f r %s", username);
-    bnet_send_CHATCOMMAND(bnet, cmd);
-    g_free(cmd);
+    if (bfi->type == BNET_USER_TYPE_FRIEND) {
+        cmd = g_strdup_printf("/f r %s", username);
+        bnet_send_CHATCOMMAND(bnet, cmd);
+        g_free(cmd);
+    }
 }
 
-static PurpleRoomlist *bnet_roomlist_get_list(PurpleConnection *gc)
+static PurpleRoomlist *
+bnet_roomlist_get_list(PurpleConnection *gc)
 {
     BnetConnectionData *bnet = gc->proto_data;
     GList *fields = NULL;
@@ -4135,7 +5462,8 @@ static PurpleRoomlist *bnet_roomlist_get_list(PurpleConnection *gc)
     return bnet->room_list;
 }
 
-static void bnet_roomlist_cancel(PurpleRoomlist *list)
+static void
+bnet_roomlist_cancel(PurpleRoomlist *list)
 {
     PurpleConnection *gc = purple_account_get_connection(list->account);
     BnetConnectionData *bnet;
@@ -4153,7 +5481,8 @@ static void bnet_roomlist_cancel(PurpleRoomlist *list)
     }
 }
 
-static void bnet_set_status(PurpleAccount *account, PurpleStatus *status)
+static void
+bnet_set_status(PurpleAccount *account, PurpleStatus *status)
 {   
     const char *msg = purple_status_get_attr_string(status, "message");
     const char *type = purple_status_get_name(status);
@@ -4185,7 +5514,8 @@ static void bnet_set_status(PurpleAccount *account, PurpleStatus *status)
     }
 }
 
-static void bnet_set_away(BnetConnectionData *bnet, gboolean new_state, const gchar *message)
+static void
+bnet_set_away(BnetConnectionData *bnet, gboolean new_state, const gchar *message)
 {
     char *msg;
     if (message == NULL || strlen(message) == 0)
@@ -4211,7 +5541,8 @@ static void bnet_set_away(BnetConnectionData *bnet, gboolean new_state, const gc
     }
 }
 
-static void bnet_set_dnd(BnetConnectionData *bnet, gboolean new_state, const gchar *message)
+static void
+bnet_set_dnd(BnetConnectionData *bnet, gboolean new_state, const gchar *message)
 {
     char *msg;
     if (message == NULL || strlen(message) == 0)
@@ -4237,7 +5568,8 @@ static void bnet_set_dnd(BnetConnectionData *bnet, gboolean new_state, const gch
     }
 }
 
-static const char *bnet_normalize(const PurpleAccount *account, const char *in)
+static const char *
+bnet_normalize(const PurpleAccount *account, const char *in)
 {
     static char out[64];
     
@@ -4248,7 +5580,8 @@ static const char *bnet_normalize(const PurpleAccount *account, const char *in)
     return out;
 }
 
-static const char *bnet_d2_normalize(const PurpleAccount *account, const char *in)
+static const char *
+bnet_d2_normalize(const PurpleAccount *account, const char *in)
 {
     PurpleConnection *gc = NULL;
     BnetConnectionData *bnet = NULL;
@@ -4287,7 +5620,8 @@ static const char *bnet_d2_normalize(const PurpleAccount *account, const char *i
 
 // removes account numbers from accounts (Ribose#2 > Ribose; Ribose#2@Azeroth > Ribose@Azeroth)
 // for SID_READUSERDATA.
-static const char *bnet_account_normalize(const PurpleAccount *account, const char *in)
+static const char *
+bnet_account_normalize(const PurpleAccount *account, const char *in)
 {
     static char o[64];
     char *out = g_strdup(in);
@@ -4319,7 +5653,8 @@ static const char *bnet_account_normalize(const PurpleAccount *account, const ch
 
 // removes the first @ and everything after it from the given account name
 // does not remove any @ that begins the username
-static const char *bnet_gateway_normalize(const PurpleAccount *account, const char *in)
+static const char *
+bnet_gateway_normalize(const PurpleAccount *account, const char *in)
 {
     static char out[64];
     
@@ -4341,26 +5676,80 @@ static const char *bnet_gateway_normalize(const PurpleAccount *account, const ch
     return out;
 }
 
-static gboolean bnet_is_d2(BnetConnectionData *bnet)
+static gboolean
+bnet_is_d2(const BnetConnectionData *bnet)
 {
     return (bnet->product_id == BNET_PRODUCT_D2DV ||
             bnet->product_id == BNET_PRODUCT_D2XP);
 }
 
-static gboolean bnet_is_w3(BnetConnectionData *bnet)
+static gboolean
+bnet_is_w3(const BnetConnectionData *bnet)
 {
     return (bnet->product_id == BNET_PRODUCT_WAR3 ||
             bnet->product_id == BNET_PRODUCT_W3XP);
 }
 
-static GList *bnet_actions(PurplePlugin *plugin, gpointer context)
+static BnetVersioningSystem
+bnet_get_versioningsystem(const BnetConnectionData *bnet)
+{
+    switch (bnet->product_id) {
+        case BNET_PRODUCT_SSHR:
+        case BNET_PRODUCT_JSTR:
+            return BNET_VERSIONING_LEGACY;
+        case BNET_PRODUCT_DRTL:
+        case BNET_PRODUCT_DSHR:
+        case BNET_PRODUCT_W2BN:
+            return BNET_VERSIONING_LEGACY2;
+        default:
+            return BNET_VERSIONING_AUTH;
+    }
+}
+
+static int
+bnet_get_key_count(const BnetConnectionData *bnet)
+{
+    switch (bnet->game) {
+        default:
+            return 0;
+        case BNET_GAME_TYPE_STAR:
+        case BNET_GAME_TYPE_SEXP:
+        case BNET_GAME_TYPE_W2BN:
+        case BNET_GAME_TYPE_D2DV:
+        case BNET_GAME_TYPE_WAR3:
+            return 1;
+        case BNET_GAME_TYPE_D2XP:
+        case BNET_GAME_TYPE_W3XP:
+            return 2;
+    }
+}
+
+static GList *
+bnet_actions(PurplePlugin *plugin, gpointer context)
 {
     GList *list = NULL;
     PurplePluginAction *action = NULL;
+    PurpleConnection *gc = NULL;
+    BnetConnectionData *bnet = NULL;
+    BnetClanMemberRank my_rank = 0;
+    
+    gc = context;
+    bnet = gc->proto_data;
     
     action = purple_plugin_action_new("Set User Info...", bnet_action_set_user_data);
-    
     list = g_list_append(list, action);
+    
+    action = purple_plugin_action_new("Show News and MOTD...", bnet_action_show_news);
+    list = g_list_append(list, action);
+    
+    if (bnet->clan_info != NULL) {
+        my_rank = bnet_clan_info_get_my_rank(bnet->clan_info);
+        if (my_rank == BNET_CLAN_RANK_SHAMAN ||
+            my_rank == BNET_CLAN_RANK_CHIEFTAIN) {
+            action = purple_plugin_action_new("Set Clan MOTD...", bnet_action_set_motd);
+            list = g_list_append(list, action);
+        }
+    }
     
     return list;
 }
@@ -4530,25 +5919,25 @@ init_plugin(PurplePlugin *plugin)
     kvp->value = "PX3W";
     optlist = g_list_append(optlist, kvp);
     
-    //kvp = g_new0(PurpleKeyValuePair, 1);
-    //kvp->key = "StarCraft: Japanese";
-    //kvp->value = "RTSJ";
-    //optlist = g_list_append(optlist, kvp);
-    //
-    //kvp = g_new0(PurpleKeyValuePair, 1);
-    //kvp->key = "StarCraft: Shareware";
-    //kvp->value = "RHSS";
-    //optlist = g_list_append(optlist, kvp);
-    //
-    //kvp = g_new0(PurpleKeyValuePair, 1);
-    //kvp->key = "Diablo";
-    //kvp->value = "LTRD";
-    //optlist = g_list_append(optlist, kvp);
-    //
-    //kvp = g_new0(PurpleKeyValuePair, 1);
-    //kvp->key = "Diablo: Shareware";
-    //kvp->value = "RHSD";
-    //optlist = g_list_append(optlist, kvp);
+    kvp = g_new0(PurpleKeyValuePair, 1);
+    kvp->key = "StarCraft: Shareware";
+    kvp->value = "RHSS";
+    optlist = g_list_append(optlist, kvp);
+    
+    kvp = g_new0(PurpleKeyValuePair, 1);
+    kvp->key = "StarCraft: Japanese";
+    kvp->value = "RTSJ";
+    optlist = g_list_append(optlist, kvp);
+    
+    kvp = g_new0(PurpleKeyValuePair, 1);
+    kvp->key = "Diablo";
+    kvp->value = "LTRD";
+    optlist = g_list_append(optlist, kvp);
+    
+    kvp = g_new0(PurpleKeyValuePair, 1);
+    kvp->key = "Diablo: Shareware";
+    kvp->value = "RHSD";
+    optlist = g_list_append(optlist, kvp);
     
     option = purple_account_option_list_new("Game Client", "product", optlist);
     prpl_info.protocol_options = g_list_append(prpl_info.protocol_options, option);

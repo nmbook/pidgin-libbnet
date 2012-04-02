@@ -1,4 +1,4 @@
-;NSIS pidgin-libbnet-0.8.0-winnt
+;NSIS pidgin-libbnet-0.9.0-winnt
 
 ;--------------------------------
 ;Include Modern UI
@@ -10,7 +10,7 @@
 
   ;Name and file
   Name "Battle.net Protocol for Pidgin"
-  OutFile "pidgin-libbnet-0.8.0.exe"
+  OutFile "pidgin-libbnet-0.9.0.exe"
 
   ;Default installation folder
   InstallDir "$PROGRAMFILES\Pidgin"
@@ -21,7 +21,7 @@
   ;Request application privileges for Windows Vista
   RequestExecutionLevel admin
   
-  BrandingText "pidgin-libbnet-0.8.0"
+  BrandingText "pidgin-libbnet-0.9.0"
 
 ;--------------------------------
 ;Interface Settings

@@ -1,7 +1,8 @@
 /**
+ * pidgin-libbnet
  * A Protocol Plugin for Pidgin, allowing emulation of a chat-only client
  * connected to the Battle.net Service.
- * Copyright (C) 2011 Nate Book
+ * Copyright (C) 2011-2012 Nate Book
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,8 +21,7 @@
  * This is converted from nls.c from BNCSutil library:
  * - changed "nls" to "srp" since nls = "new logon system" and could be confused with BNLS ("Battle.net logon server")
  *   even though BNLS supports "nls", in our case we are doing it locally; thus I call it "srp" since that is the protocol that is actually implemented
- * - changed to use our SHA-1 functions
- *
+ * - changed to use our SHA-1 functions.
  *
  * BNCSutil
  * Battle.Net Utility Library

@@ -1,7 +1,8 @@
-/** 
+/**
+ * pidgin-libbnet
  * A Protocol Plugin for Pidgin, allowing emulation of a chat-only client
  * connected to the Battle.net Service.
- * Copyright (C) 2011 Nate Book
+ * Copyright (C) 2011-2012 Nate Book
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,16 +18,17 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _PACKETS_C_
-#define _PACKETS_C_
+#ifndef _BUFFERER_C_
+#define _BUFFERER_C_
 
-#include "packets.h"
+#include "bufferer.h"
 
 void bnet_packet_free(BnetPacket *bnet_packet)
 {
     if (bnet_packet->allocd) {
-        if (bnet_packet->data != NULL)
+        if (bnet_packet->data != NULL) {
             g_free(bnet_packet->data);
+        }
     }
     g_free(bnet_packet);
 }
@@ -36,7 +38,7 @@ gboolean bnet_packet_insert(BnetPacket *bnet_packet, gconstpointer data, const g
     if (bnet_packet->allocd == FALSE) return FALSE;
     
     while (bnet_packet->pos + length > bnet_packet->len) {
-        bnet_packet->len += BNET_INITIAL_BUFSIZE;
+        bnet_packet->len += BNET_BUFFER_GROW_SIZE;
         if (bnet_packet->data == NULL) return FALSE;
         bnet_packet->data = g_realloc(bnet_packet->data, bnet_packet->len);
     }
@@ -158,9 +160,9 @@ BnetPacket *bnet_packet_create(const gsize header_length)
     BnetPacket *bnet_packet = g_new0(BnetPacket, 1);
      
     bnet_packet->pos = 0;
-    bnet_packet->len = BNET_INITIAL_BUFSIZE;
+    bnet_packet->len = BNET_BUFFER_GROW_SIZE;
     bnet_packet->allocd = TRUE;
-    bnet_packet->data = g_malloc0(BNET_INITIAL_BUFSIZE);
+    bnet_packet->data = g_malloc0(BNET_BUFFER_GROW_SIZE);
     
     if (bnet_packet->data == NULL) {
         bnet_packet_free(bnet_packet);
@@ -211,7 +213,7 @@ int bnet_packet_send_bnls(BnetPacket *bnet_packet, const guint8 id, const int fd
 #define ASCII_OFFSET 51
 #define NUM_CHARS    16
 
-char *bnet_packet_debug(BnetPacket *bnet_packet)
+char *bnet_packet_debug(const BnetPacket *bnet_packet)
 {
     guint pos = 0;
     guint8 c = 0;

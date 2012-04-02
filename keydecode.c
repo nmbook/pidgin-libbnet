@@ -1,7 +1,8 @@
-/** 
+/**
+ * pidgin-libbnet
  * A Protocol Plugin for Pidgin, allowing emulation of a chat-only client
  * connected to the Battle.net Service.
- * Copyright (C) 2011 Nate Book
+ * Copyright (C) 2011-2012 Nate Book
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,8 +18,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
  *
- *
- * Converted from C++ to C for use in Pidgin
+ * Converted from C++ to C for use with this plugin.
  *
  * BNCSutil
  * Battle.Net Utility Library
@@ -142,8 +142,12 @@ static const unsigned char w3TranslateMap[] = {
     0x01, 0x06, 0x0D, 0x02, 0x05, 0x0A, 0x0B, 0x04, 0x03, 0x0A, 0x0C, 0x04,
     0x0D, 0x0B, 0x09, 0x0E, 0x0F, 0x06, 0x01, 0x07, 0x02, 0x00, 0x05, 0x08
 };
- 
-gboolean bnet_key_decode(BnetKey *keys, int key_count,
+
+/**
+ * Call this to decode one or two keys for SID_AUTH_CHECK.
+ * Returns a boolean indicating success. Stores the data it extracts into keys[].
+ */
+gboolean bnet_key_decode(BnetKey keys[2], int key_count,
      guint32 client_cookie, guint32 server_cookie,
      const char *key1_string, const char *key2_string)
 {
@@ -196,6 +200,81 @@ gboolean bnet_key_decode(BnetKey *keys, int key_count,
             keys[1].length = 0;
             return FALSE;
         }
+    }
+    
+    return TRUE;
+}
+
+/**
+ * Call this to decode one key for SID_CDKEY (JSTR ONLY).
+ * Returns a boolean indicating success. Stores the key it verifies into key.
+ */
+gboolean bnet_key_decode_legacy_verify_only(char *key,
+     guint32 client_cookie, guint32 server_cookie,
+     const char *key1_string)
+{
+    char key1[14];
+    
+    int i, j;
+    for (i = 0, j = 0; i < strlen(key1_string) && j < 13; i++) {
+        if (isalnum(key1_string[i])) {
+            key1[j] = toupper(key1_string[i]);
+            j++;
+        }
+    }
+    key1[j] = '\0';
+    
+    BnetKey *key_tmp = g_new0(BnetKey, 1);
+    CDKeyDecoder *ctx = bnet_key_create_context(key1);
+    if (bnet_is_key_valid(ctx)) {
+        key_tmp->length = strlen(key1);
+        key_tmp->product_value = bnet_key_get_product(ctx);
+        key_tmp->public_value = bnet_key_get_val1(ctx);
+        key_tmp->private_value = 0;
+        bnet_key_calculate_hash_legacy(ctx, client_cookie, server_cookie);
+        bnet_key_get_hash(ctx, (guint8 *)(key_tmp->key_hash));
+        bnet_key_free(ctx);
+        g_memmove(key, key1, 14);
+        g_free(key_tmp);
+    } else {
+        g_free(key_tmp);
+        return FALSE;
+    }
+    
+    return TRUE;
+}
+    
+/**
+ * Call this to decode one key for SID_CDKEY2 (WC2 ONLY).
+ * Returns a boolean indicating success. Stores the data it extracts into key.
+ */
+gboolean bnet_key_decode_legacy(BnetKey *key,
+     guint32 client_cookie, guint32 server_cookie,
+     const char *key1_string)
+{
+    char key1[17];
+    
+    int i, j;
+    for (i = 0, j = 0; i < strlen(key1_string) && j < 16; i++) {
+        if (isalnum(key1_string[i])) {
+            key1[j] = toupper(key1_string[i]);
+            j++;
+        }
+    }
+    key1[j] = '\0';
+    
+    CDKeyDecoder *ctx = bnet_key_create_context(key1);
+    if (bnet_is_key_valid(ctx)) {
+        key->length = strlen(key1);
+        key->product_value = bnet_key_get_product(ctx);
+        key->public_value = bnet_key_get_val1(ctx);
+        key->private_value = 0;
+        bnet_key_calculate_hash_legacy(ctx, client_cookie, server_cookie);
+        bnet_key_get_hash(ctx, (guint8 *)(key->key_hash));
+        bnet_key_free(ctx);
+    } else {
+        key->length = 0;
+        return FALSE;
     }
     
     return TRUE;
@@ -377,6 +456,42 @@ guint32 bnet_key_get_long_val2(CDKeyDecoder *ctx, char* out)
 }
 
 /**
+ * Calculates the CD-Key hash for use in SID_CDKEY2 (0x36)
+ * Returns the length of the generated hash; call getHash and pass
+ * it a character array that is at least this size.  Returns 0 on failure.
+ * Must be given a WarCraft II BNE key.
+ */
+gsize bnet_key_calculate_hash_legacy(CDKeyDecoder *ctx, const guint32 clientToken,
+    const guint32 serverToken)
+{
+    if (!ctx->initialized || !ctx->keyOK) return 0;
+    if (ctx->keyType != CDKEY_TYPE_W2D2) return 0;
+    ctx->hashLen = 0;
+    
+    guint32 product = (guint32) bnet_key_get_product(ctx);
+    guint32 value1 = (guint32) bnet_key_get_val1(ctx);
+    guint32 value2 = (guint32) bnet_key_get_val2(ctx);
+    
+    if (product != 0x04) return 0;
+    
+    sha1_context sha;
+    guint8 res[SHA1_HASH_SIZE];
+    
+    sha.version = SHA1_TYPE_BROKEN;
+    sha1_reset(&sha);
+    sha1_input(&sha, (guint8 *)(&clientToken), BNET_SIZE_DWORD);
+    sha1_input(&sha, (guint8 *)(&serverToken), BNET_SIZE_DWORD);
+    sha1_input(&sha, (guint8 *)(&product), BNET_SIZE_DWORD);
+    sha1_input(&sha, (guint8 *)(&value1), BNET_SIZE_DWORD);
+    sha1_input(&sha, (guint8 *)(&value2), BNET_SIZE_DWORD);
+    sha1_digest(&sha, res);
+    ctx->keyHash = g_malloc0(SHA1_HASH_SIZE);
+    g_memmove(ctx->keyHash, res, SHA1_HASH_SIZE);
+    ctx->hashLen = SHA1_HASH_SIZE;
+    return SHA1_HASH_SIZE;
+}
+
+/**
  * Calculates the CD-Key hash for use in SID_AUTH_CHECK (0x51)
  * Returns the length of the generated hash; call getHash and pass
  * it a character array that is at least this size.  Returns 0 on failure.
@@ -444,6 +559,7 @@ gsize bnet_key_calculate_hash(CDKeyDecoder *ctx, const guint32 clientToken,
             //sha1_input(&sha, (guint8 *)(&zero), BNET_SIZE_DWORD);
             sha1_input(&sha, (guint8 *)(value2x), 10);
             sha1_digest(&sha, res);
+            purple_debug_info("bnet", "value2x = %x %x %x\n", *((guint32 *)(value2x)+0), *((guint32 *)(value2x)+4), *((guint16 *)(value2x)+8));
             ctx->keyHash = g_malloc0(SHA1_HASH_SIZE);
             g_memmove(ctx->keyHash, res, SHA1_HASH_SIZE);
             ctx->hashLen = SHA1_HASH_SIZE;
@@ -646,7 +762,8 @@ gboolean process_w3(CDKeyDecoder *ctx)
 
         ctx->product = values[0] >> 0xA;
         ctx->product = SWAP4(ctx->product);
-#if LITTLEENDIAN
+#if BIGENDIAN
+#else
         for (i = 0; i < 4; i++) {
                 values[i] = MSB4(values[i]);
         }
@@ -655,14 +772,14 @@ gboolean process_w3(CDKeyDecoder *ctx)
         ctx->value1 = LSB4(*(guint32 *) (((char*) values) + 2)) & 0xFFFFFF03;
         
         ctx->w3value2 = g_malloc0(10);
-#if LITTLEENDIAN
-        *((guint16 *) ctx->w3value2) = MSB2(*((guint16 *) (((char*) values) + 6)));
-        *((guint32 *) ((char*) ctx->w3value2 + 2)) = MSB4(*((guint32 *) (((char*) values) + 8)));
-        *((guint32 *) ((char*) ctx->w3value2 + 6)) = MSB4(*((guint32 *) (((char*) values) + 12)));
-#else
+#if BIGENDIAN
         *((guint16 *) ctx->w3value2) = LSB2(*((guint16 *) (((char*) values) + 6)));
         *((guint32 *) ((char*) ctx->w3value2 + 2)) = LSB4(*((guint32 *) (((char*) values) + 8)));
         *((guint32 *) ((char*) ctx->w3value2 + 6)) = LSB4(*((guint32 *) (((char*) values) + 12)));
+#else
+        *((guint16 *) ctx->w3value2) = MSB2(*((guint16 *) (((char*) values) + 6)));
+        *((guint32 *) ((char*) ctx->w3value2 + 2)) = MSB4(*((guint32 *) (((char*) values) + 8)));
+        *((guint32 *) ((char*) ctx->w3value2 + 6)) = MSB4(*((guint32 *) (((char*) values) + 12)));
 #endif
         return 1;
 }
