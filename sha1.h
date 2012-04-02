@@ -1,7 +1,8 @@
-/** 
+/**
+ * pidgin-libbnet
  * A Protocol Plugin for Pidgin, allowing emulation of a chat-only client
  * connected to the Battle.net Service.
- * Copyright (C) 2011 Nate Book
+ * Copyright (C) 2011-2012 Nate Book
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,6 +18,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
  *
+ * Converted from Hdx's code for use with this plugin.
  *
  *  Author: Hdx
  *
