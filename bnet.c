@@ -2879,7 +2879,7 @@ bnet_recv_AUTH_INFO(BnetConnectionData *bnet, BnetPacket *pkt)
     bnet->server_cookie = server_cookie;
     bnet->udp_cookie = udp_cookie;
     
-    if (bnet_is_w3(bnet)) {
+    /*if (bnet_is_w3(bnet)) {
         gchar *signature;
         struct sockaddr sa;
         struct sockaddr *psa = &sa;
@@ -2898,7 +2898,7 @@ bnet_recv_AUTH_INFO(BnetConnectionData *bnet, BnetPacket *pkt)
         }
         
         g_free(signature);
-    }
+    }*/
     
     bnet_bnls_send_VERSIONCHECKEX2(bnet,
         logon_system, server_cookie, udp_cookie, mpq_ft, mpq_fn, checksum_formula);
