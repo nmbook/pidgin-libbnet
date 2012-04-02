@@ -21,7 +21,7 @@
 #ifndef _W3CLAN_H_
 #define _W3CLAN_H_
 
-#include <strings.h>
+#include <string.h>
 
 #include "glib.h"
 
