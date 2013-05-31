@@ -31,3 +31,10 @@ Should Work With
 Any libpurple based UI.
 Any Windows, Mac, or Linux.
 
+
+Setup
+-----
+
+Here's [how to setup] [1] this plugin on your computer.
+
+    [1] https://github.com/nmbook/pidgin-libbnet/blob/master/SETUP.md "Installation and Usage"
