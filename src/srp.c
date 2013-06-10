@@ -725,16 +725,19 @@ static void srp_get_v_mpz(srp_t *srp, mpz_t v, mpz_t x)
 static guint32 srp_get_u(const gchar *B)
 {
     sha1_context ctx;
-    guint8 hash[20];
+    union {
+	guint8 as8[20];
+	guint32 as32[5];
+    } data;
     guint32 u;
     
     ctx.version = SHA1_TYPE_NORMAL;
     
     sha1_reset(&ctx);
     sha1_input(&ctx, (guint8 *) B, 32);
-    sha1_digest(&ctx, hash);
+    sha1_digest(&ctx, data.as8);
     
-    u = *(guint32 *) hash;
+    u = data.as32[0];
     u = MSB4(u); // needed? yes
     return u;
 }

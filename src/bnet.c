@@ -1838,7 +1838,7 @@ bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                         
                         users = g_list_prepend(users, bcuel->username);
                         extras = g_list_prepend(extras, bnet_channel_message_parse(bcuel->stats_data, bcuel->flags, bcuel->ping));
-                        flags = g_list_prepend(flags, (void *)bcuelflags);
+                        flags = g_list_prepend(flags, GINT_TO_POINTER(bcuelflags));
                         //i++;
                         //purple_debug_info("bnet", "%d: %s status: %d\n", i, bcuel->username, bcuel->status);
                         el = g_list_next(el);
@@ -5113,7 +5113,7 @@ bnet_join_chat(PurpleConnection *gc, GHashTable *components)
                     
                     users = g_list_prepend(users, bcuel->username);
                     extras = g_list_prepend(extras, bnet_channel_message_parse(bcuel->stats_data, bcuel->flags, bcuel->ping));
-                    flags = g_list_prepend(flags, (void *)bcuelflags);
+                    flags = g_list_prepend(flags, GINT_TO_POINTER(bcuelflags));
                     //i++;
                     //purple_debug_info("bnet", "%d: %s status: %d\n", i, bcuel->username, bcuel->status);
                     el = g_list_next(el);
