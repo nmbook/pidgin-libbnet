@@ -55,28 +55,43 @@ Here's a sequence of commands that will compile it for you from the git reposito
 
 1. Get necessary packages.
     Make sure you have the following packages to compile and link against:
+
     Fedora/RPM-based
     * libpurple-devel
     * glib-devel
     * gmp-devel
+    
     Ubuntu/DEB-based
     * libpurple-dev
     * libglib-dev
     * libgmp-dev
+    
     Make sure you have the following packages to run the commands:
     * git
     * gcc
     * autoconf
     * libtool
     * make
+
 2. Get the code with this command:
+
+      ```
       git clone http://github.com/nmbook/pidgin-libbnet/
+      ```
+
 3. Run these commands:
+
+      ```
       ./autogen.sh
       ./configure
       make
+      ```
+
 4. Automatically move the binary to your purple plugins folder (this part requires root or sudo):
+
+      ```
       make install
+      ```
 
 
 From Source on Windows
@@ -84,7 +99,7 @@ From Source on Windows
 
 This is not easy on Windows. To do this on Windows, you need to set up a [Pidgin development environment as detailed here (click)] [2]. 
 
-Then after building it, I placed the source of my plugin in `<path to pidgin source>`/libpurple/protocols/bnet/. If you follow the directions above and attempt to build it you'll get lots of errors. Once you have enough of it built that libpurple.dll is created, you can stop, since this plugin does not rely on pidgin or finch at all.
+Then after building it, I placed the source of my plugin in ```<path to pidgin source>/libpurple/protocols/bnet/```. If you follow the directions above and attempt to build it you'll get lots of errors. Once you have enough of it built that libpurple.dll is created, you can stop, since this plugin does not rely on pidgin or finch at all.
 
 Then I compiled GMP using MinGW (not Cygwin) (this was not easy).
 
@@ -96,10 +111,10 @@ Then to install you can either do:
 
     make -f Makefile.mingw install
 
-Or place the DLL in `%appdata%/.purple/plugins` yourself.
-It will try to move the pixmaps to C:\Program Files\Pidgin (where ever it's installed)\pixmaps\pidgin\protocols\##\bnet.png for each ##=16,22,48 so that Pidgin can read them.
+Or place the DLL in ```%appdata%/.purple/plugins``` yourself.
+It will try to move the pixmaps to ```<pidgin install directory>\pixmaps\pidgin\protocols\##\bnet.png``` for each ##=16,22,48 so that Pidgin can read them.
 
-UPDATE: My makefile was using an outdated switch (`-mno-cygwin`) to use MinGW instead of linking against `cygwin1.dll` when I wrote the above. Now that I've updated to the newest Cygwin, I had to make sure that it was using the MinGW gcc and not Cygwin's (using a little bit of PATH hacking). Remember how I made the DLL and the installer so you don't have to compile this yourself?
+UPDATE: My makefile was using an outdated switch (```-mno-cygwin```) to use MinGW instead of linking against ```cygwin1.dll``` when I wrote the above. Now that I've updated to the newest Cygwin, I had to make sure that it was using the MinGW gcc and not Cygwin's (using a little bit of PATH hacking). Remember how I made the DLL and the installer so you don't have to compile this yourself?
 
 Create an Account
 =================
@@ -136,6 +151,6 @@ A: I have actually investigated many different programs that utilize libpurple, 
 * Adium (Mac OS X only): if someone tries it, tell me!
 * Others: none that I know of at this time that will work.
 
-    [1]: https://github.com/nmbook/pidgin-libbnet/blob/master/COMPILE.md "Compiling from Source"
-    [2]: http://developer.pidgin.im/wiki/BuildingWinPidgin               "Pidgin Development Environment on Windows"
+[1]: https://github.com/nmbook/pidgin-libbnet/blob/master/COMPILE.md "Compiling from Source"
+[2]: http://developer.pidgin.im/wiki/BuildingWinPidgin               "Pidgin Development Environment on Windows"
 
