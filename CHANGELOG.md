@@ -70,7 +70,6 @@ v0.6.0: "Public Release 1"
 ==========================
 * This is the first release, so nothing "changed" since the last one.
 
-
 I'm using the following lists to record what must be done, what should be done, and what might be done with this plugin. This is not a bug list, use the Issues section for that...
 
 Definite To Do

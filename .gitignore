@@ -1,4 +1,36 @@
-*.o
+# editor backup and filesystem files
 *.swp
 *~
+.nfs*
+
+# after autogen.sh (autoreconf)
+Makefile.in
+aclocal.m4
+autom4te.cache/
+autoscan.log
+config.guess
+config.sub
+configure
+install-sh
+ltmain.sh
+m4/
+missing
+ar-lib
+config.h.in
+depcomp
+
+# after configure
+Makefile
+config.log
+config.status
+libtool
+config.h
+src/.deps/
+stamp-h1
+
+# after make
+*.o
+*.lo
+*.la
+src/.libs/
 

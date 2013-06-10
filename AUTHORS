@@ -1,0 +1,19 @@
+Nate Book               : Author (2011-2013).
+    Nate Book <nmbook@gmail.com>
+
+Clan Valhalla Legends   : Clan [vL] on Battle.net (1999 on), responsible for doing a large amount of Battle.net research.
+    http://forum.valhallalegends.com/
+
+BNETDocs/BNETDocs Redux : The website [vL] started, hosting detailed docs on how Battle.net works.
+    http://bnetdocs.org/
+
+BNCSutil                : Written by shadypalm88, this is the original utility library for Battle.net clients (2004-2006).
+                          The source of WarCraft III logon support (srp.c) and CD-key decoding support (keydecode.c).
+    http://bncsutil.googlecode.com/
+    Eric Naeseth <enaeseth@gmail.com>
+
+Blake Hanson "Hdx"      : The source (modified from BNCSutil) of broken-SHA-1 support (sha1.c).
+
+Pidgin Team             : Pidgin, the multi-protocol IM client
+    http://pidgin.im/
+
