@@ -4104,55 +4104,55 @@ bnet_close(PurpleConnection *gc)
         bnet->first_join = FALSE;
         bnet->is_online = FALSE;
         bnet->sent_enter_channel = FALSE;
-        purple_debug_info("bnet", "free ka_handle\n");
         if (bnet->ka_handle != 0) {
+            purple_debug_info("bnet", "free ka_handle\n");
             purple_timeout_remove(bnet->ka_handle);
             bnet->ka_handle = 0;
         }
-        purple_debug_info("bnet", "free sbnls.fd\n");
         if (bnet->sbnls.fd != 0) {
+            purple_debug_info("bnet", "free sbnls.fd\n");
             purple_input_remove(bnet->sbnls.inpa);
             close(bnet->sbnls.fd);
             bnet->sbnls.fd = 0;
         }
-        purple_debug_info("bnet", "free bnls_server\n");
         if (bnet->bnls_server != NULL) {
+            purple_debug_info("bnet", "free bnls_server\n");
             g_free(bnet->bnls_server);
             bnet->bnls_server = NULL;
         }
-        purple_debug_info("bnet", "free sbnet.fd\n");
         if (bnet->sbnet.fd != 0) {
+            purple_debug_info("bnet", "free sbnet.fd\n");
             purple_input_remove(bnet->sbnet.inpa);
             close(bnet->sbnet.fd);
             bnet->sbnet.fd = 0;
         }
-        purple_debug_info("bnet", "free username\n");
         if (bnet->username != NULL) {
+            purple_debug_info("bnet", "free username\n");
             g_free(bnet->username);
             bnet->username = NULL;
         }
-        purple_debug_info("bnet", "free my_statstring\n");
         if (bnet->my_statstring != NULL) {
+            purple_debug_info("bnet", "free my_statstring\n");
             g_free(bnet->my_statstring);
             bnet->my_statstring = NULL;
         }
-        purple_debug_info("bnet", "free my_accountname\n");
         if (bnet->my_accountname != NULL) {
+            purple_debug_info("bnet", "free my_accountname\n");
             g_free(bnet->my_accountname);
             bnet->my_accountname = NULL;
         }
-        purple_debug_info("bnet", "free unique_username\n");
         if (bnet->unique_username != NULL) {
+            purple_debug_info("bnet", "free unique_username\n");
             g_free(bnet->unique_username);
             bnet->unique_username = NULL;
         }
-        purple_debug_info("bnet", "free clan_info\n");
         if (bnet->clan_info != NULL) {
+            purple_debug_info("bnet", "free clan_info\n");
             bnet_clan_info_free(bnet->clan_info);
             bnet->clan_info = NULL;
         }
-        purple_debug_info("bnet", "free news\n");
         if (bnet->news != NULL) {
+            purple_debug_info("bnet", "free news\n");
             GList *el = g_list_first(bnet->news);
             do {
                 bnet_news_item_free(el->data);
@@ -4161,18 +4161,18 @@ bnet_close(PurpleConnection *gc)
             g_list_free(bnet->news);
             bnet->news = NULL;
         }
-        purple_debug_info("bnet", "free server\n");
         if (bnet->server != NULL) {
+            purple_debug_info("bnet", "free server\n");
             g_free(bnet->server);
             bnet->server = NULL;
         }
-        purple_debug_info("bnet", "free account_data\n");
         if (bnet->account_data != NULL) {
+            purple_debug_info("bnet", "free account_data\n");
             srp_free(bnet->account_data);
             bnet->account_data = NULL;
         }
-        purple_debug_info("bnet", "free last_sent_to\n");
         if (bnet->last_sent_to != NULL) {
+            purple_debug_info("bnet", "free last_sent_to\n");
             g_free(bnet->last_sent_to);
             bnet->last_sent_to = NULL;
         }
@@ -5885,58 +5885,63 @@ init_plugin(PurplePlugin *plugin)
     prpl_info.protocol_options = g_list_append(prpl_info.protocol_options, option);
     
     kvp = g_new0(PurpleKeyValuePair, 1);
-    kvp->key = "StarCraft";
-    kvp->value = "RATS";
+    kvp->key = g_strdup("StarCraft");
+    kvp->value = g_strdup("RATS");
     optlist = g_list_append(optlist, kvp);
     
     kvp = g_new0(PurpleKeyValuePair, 1);
-    kvp->key = "StarCraft: Brood War";
-    kvp->value = "PXES";
+    kvp->key = g_strdup("StarCraft: Brood War");
+    kvp->value = g_strdup("PXES");
     optlist = g_list_append(optlist, kvp);
     
     kvp = g_new0(PurpleKeyValuePair, 1);
-    kvp->key = "WarCraft II: Battle.net Edition";
-    kvp->value = "NB2W";
+    kvp->key = g_strdup("WarCraft II: Battle.net Edition");
+    kvp->value = g_strdup("NB2W");
     optlist = g_list_append(optlist, kvp);
     
     kvp = g_new0(PurpleKeyValuePair, 1);
-    kvp->key = "Diablo II";
-    kvp->value = "VD2D";
+    kvp->key = g_strdup("Diablo II");
+    kvp->value = g_strdup("VD2D");
     optlist = g_list_append(optlist, kvp);
     
     kvp = g_new0(PurpleKeyValuePair, 1);
-    kvp->key = "Diablo II: Lord of Destruction";
-    kvp->value = "PX2D";
+    kvp->key = g_strdup("Diablo II: Lord of Destruction");
+    kvp->value = g_strdup("PX2D");
     optlist = g_list_append(optlist, kvp);
     
     kvp = g_new0(PurpleKeyValuePair, 1);
-    kvp->key = "WarCraft III";
-    kvp->value = "3RAW";
+    kvp->key = g_strdup("WarCraft III");
+    kvp->value = g_strdup("3RAW");
     optlist = g_list_append(optlist, kvp);
     
     kvp = g_new0(PurpleKeyValuePair, 1);
-    kvp->key = "WarCraft III: The Frozen Throne";
-    kvp->value = "PX3W";
+    kvp->key = g_strdup("WarCraft III: The Frozen Throne");
+    kvp->value = g_strdup("PX3W");
     optlist = g_list_append(optlist, kvp);
     
     kvp = g_new0(PurpleKeyValuePair, 1);
-    kvp->key = "StarCraft: Shareware";
-    kvp->value = "RHSS";
+    kvp->key = g_strdup("StarCraft: Shareware");
+    kvp->value = g_strdup("RHSS");
     optlist = g_list_append(optlist, kvp);
     
     kvp = g_new0(PurpleKeyValuePair, 1);
-    kvp->key = "StarCraft: Japanese";
-    kvp->value = "RTSJ";
+    kvp->key = g_strdup("StarCraft: Japanese");
+    kvp->value = g_strdup("RTSJ");
     optlist = g_list_append(optlist, kvp);
     
     kvp = g_new0(PurpleKeyValuePair, 1);
-    kvp->key = "Diablo";
-    kvp->value = "LTRD";
+    kvp->key = g_strdup("Diablo");
+    kvp->value = g_strdup("LTRD");
     optlist = g_list_append(optlist, kvp);
     
     kvp = g_new0(PurpleKeyValuePair, 1);
-    kvp->key = "Diablo: Shareware";
-    kvp->value = "RHSD";
+    kvp->key = g_strdup("Diablo: Shareware");
+    kvp->value = g_strdup("RHSD");
+    optlist = g_list_append(optlist, kvp);
+
+    kvp = g_new0(PurpleKeyValuePair, 1);
+    kvp->key = g_strdup("Chat Client");
+    kvp->value = g_strdup("TAHC");
     optlist = g_list_append(optlist, kvp);
     
     option = purple_account_option_list_new("Game Client", "product", optlist);
