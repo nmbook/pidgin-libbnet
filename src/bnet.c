@@ -175,7 +175,7 @@ bnet_connect(PurpleAccount *account, const gboolean do_register)
     
     // begin connections
     purple_debug_info("bnet", "Connecting to BNLS %s...\n", bnet->bnls_server);
-    if (bnet->create_if_dne) {
+    if (!bnet->create_if_dne) {
         purple_connection_update_progress(gc, "Connecting to BNLS", BNET_STEP_BNLS, BNET_STEP_COUNT);
     }
     bnls_conn_data = purple_proxy_connect(gc, account, bnet->bnls_server, bnet->bnls_port,
@@ -220,6 +220,7 @@ bnet_bnls_login_cb(gpointer data, gint source, const gchar *error_message)
     }
 }
 
+/* NO LONGER USED
 static int
 bnet_bnls_send_CHOOSENLSREVISION(const BnetConnectionData *bnet)
 {
@@ -233,6 +234,7 @@ bnet_bnls_send_CHOOSENLSREVISION(const BnetConnectionData *bnet)
     
     return ret;
 }
+*/
 
 static int
 bnet_bnls_send_LOGONCHALLENGE(const BnetConnectionData *bnet)
@@ -254,6 +256,7 @@ bnet_bnls_send_LOGONCHALLENGE(const BnetConnectionData *bnet)
     return ret;
 }
 
+/* NO LONGER USED
 static int
 bnet_bnls_send_LOGONPROOF(const BnetConnectionData *bnet, const char *s_and_B)
 {
@@ -267,6 +270,7 @@ bnet_bnls_send_LOGONPROOF(const BnetConnectionData *bnet, const char *s_and_B)
     
     return ret;
 }
+*/
 
 static int
 bnet_bnls_send_VERSIONCHECKEX2(const BnetConnectionData *bnet,
@@ -462,7 +466,7 @@ bnet_bnls_recv_REQUESTVERSIONBYTE(BnetConnectionData *bnet, BnetPacket *pkt)
     
     // connect to bnet
     purple_debug_info("bnet", "Connecting to %s...\n", bnet->server);
-    if (bnet->create_if_dne) {
+    if (!bnet->create_if_dne) {
         purple_connection_update_progress(gc, "Connecting to Battle.net", BNET_STEP_CONNECTING, BNET_STEP_COUNT);
     }
     conn_data = purple_proxy_connect(gc, account, bnet->server, bnet->port,
@@ -507,6 +511,13 @@ bnet_bnls_recv_VERSIONCHECKEX2(BnetConnectionData *bnet, BnetPacket *pkt)
         }
         
         g_free(exe_info);
+    } else {
+        char *tmp = NULL;
+        tmp = g_strdup("The BNLS server could says version check failure");
+        purple_connection_error_reason (bnet->account->gc,
+            PURPLE_CONNECTION_ERROR_NETWORK_ERROR,
+            tmp);
+        g_free(tmp);
     }
 }
 
@@ -562,7 +573,7 @@ bnet_login_cb(gpointer data, gint source, const gchar *error_message)
     }
     
     purple_debug_info("bnet", "Connected!\n");
-    if (bnet->create_if_dne) {
+    if (!bnet->create_if_dne) {
         purple_connection_update_progress(gc, "Checking product key and version", BNET_STEP_CREV, BNET_STEP_COUNT);
     }
     
@@ -764,6 +775,7 @@ bnet_send_CHATCOMMAND(const BnetConnectionData *bnet, const char *command)
     return ret;
 }
 
+/* NO LONGER USED
 static int
 bnet_send_LEAVECHAT(const BnetConnectionData *bnet)
 {
@@ -776,6 +788,7 @@ bnet_send_LEAVECHAT(const BnetConnectionData *bnet)
     
     return ret;
 }
+*/
 
 static int
 bnet_send_CDKEY(const BnetConnectionData *bnet)
@@ -1251,6 +1264,26 @@ bnet_send_AUTH_CHECK(const BnetConnectionData *bnet,
     return ret;
 }
 
+
+static int
+bnet_send_AUTH_ACCOUNTCREATE(const BnetConnectionData *bnet, char *salt_and_v)
+{
+    BnetPacket *pkt = NULL;
+    int ret = -1;
+    
+    char *username = bnet->username;
+    
+    g_return_val_if_fail(username != NULL, -1);
+    
+    pkt = bnet_packet_create(BNET_PACKET_BNCS);
+    bnet_packet_insert(pkt, salt_and_v, 64);
+    bnet_packet_insert(pkt, username, strlen(username) + 1);
+    
+    ret = bnet_packet_send(pkt, BNET_SID_AUTH_ACCOUNTCREATE, bnet->sbnet.fd);
+    
+    return ret;
+}
+
 static int
 bnet_send_AUTH_ACCOUNTLOGON(const BnetConnectionData *bnet, char *A)
 {
@@ -1622,13 +1655,17 @@ bnet_recv_REPORTVERSION(BnetConnectionData *bnet, BnetPacket *pkt)
                     default:
                         purple_debug_fatal("bnet", "Received SID_REPORTVERSION during AUTH logon sequence. Key required for this product. Unknown next packet. Logging on to account instead.");
                         
-                        purple_connection_update_progress(gc, "Authenticating", BNET_STEP_LOGON, BNET_STEP_COUNT);
+                        if (!bnet->create_if_dne) {
+                            purple_connection_update_progress(gc, "Authenticating", BNET_STEP_LOGON, BNET_STEP_COUNT);
+                        }
                         
                         bnet_account_logon(bnet);
                         break;
                 }
             } else {
-                purple_connection_update_progress(gc, "Authenticating", BNET_STEP_LOGON, BNET_STEP_COUNT);
+                if (!bnet->create_if_dne) {
+                    purple_connection_update_progress(gc, "Authenticating", BNET_STEP_LOGON, BNET_STEP_COUNT);
+                }
                 
                 bnet_account_logon(bnet);
             }
@@ -1749,7 +1786,7 @@ bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
         
         purple_connection_set_state(gc, PURPLE_CONNECTED);
         bnet->is_online = TRUE;
-        bnet->first_join = TRUE;
+        bnet->channel_first_join = TRUE;
         
         bnet->ka_handle = purple_timeout_add_seconds(30, (GSourceFunc)bnet_keepalive_timer, bnet);
         
@@ -1760,10 +1797,12 @@ bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
         bnet_set_status(bnet->account, status);
     }
     
-    if (!bnet->first_join && bnet->channel_id != 0)
+    if (!bnet->channel_first_join && bnet->channel_id != 0) {
         conv = purple_find_chat(gc, bnet->channel_id);
-    if (conv != NULL)
+    }
+    if (conv != NULL) {
         chat = purple_conversation_get_chat_data(conv);
+    }
     
     id = bnet_packet_read_dword(pkt);
     flags = bnet_packet_read_dword(pkt);
@@ -1817,6 +1856,13 @@ bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                 bcu->ping = ping;
                 bcu->hidden = FALSE;
                 bnet->channel_users = g_list_append(bnet->channel_users, bcu);
+                if (bnet->channel_seen_self) {
+                    if (chat != NULL) {
+                        purple_conv_chat_add_user(chat, who_n,
+                                 bnet_channel_message_parse(bcu->stats_data, flags, ping),
+                                 bnet_channel_flags_to_prpl_flags(flags), FALSE);
+                    }
+                }
                 
                 //if (chat != NULL) {
                     //purple_conv_chat_add_user(chat, who_n,
@@ -1831,6 +1877,8 @@ bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                     GList *extras = NULL;
                     GList *flags = NULL;
                     GList *el = g_list_first(bnet->channel_users);
+
+                    bnet->channel_seen_self = TRUE;
                     //int i = 0;
                     while (el != NULL) {
                         BnetChannelUser *bcuel = el->data;
@@ -1843,8 +1891,8 @@ bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                         //purple_debug_info("bnet", "%d: %s status: %d\n", i, bcuel->username, bcuel->status);
                         el = g_list_next(el);
                     }
-                    if (bnet->first_join) {
-                        bnet->first_join = FALSE;
+                    if (bnet->channel_first_join) {
+                        bnet->channel_first_join = FALSE;
                     } else {
                         conv = serv_got_joined_chat(gc, bnet->channel_id, bnet->channel_name);
                         if (conv != NULL) {
@@ -1875,6 +1923,7 @@ bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
                 who_n, flags, ping, what_utf);
             
             bcu = g_new0(BnetChannelUser, 1);
+            bcu->type = BNET_USER_TYPE_CHANNELUSER;
             bcu->username = g_strdup(who_n);
             // intentional: stats should not be read as UTF-8.
             // Diablo II statstrings will be affected. what used instead of what_utf.
@@ -1895,12 +1944,11 @@ bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
             purple_debug_info("bnet", "USER PARTED %s %x %dms: %s\n",
                 who_n, flags, ping, what_utf);
             
+            GList *li = g_list_find_custom(bnet->channel_users, who_n, bnet_channel_user_compare);
+            if (li != NULL) {
+                bnet->channel_users = g_list_delete_link(bnet->channel_users, li);
+            }
             if (chat != NULL) {
-                GList *li = g_list_find_custom(bnet->channel_users, who_n, bnet_channel_user_compare);
-                if (li != NULL) {
-                    bnet->channel_users = g_list_delete_link(bnet->channel_users, li);
-                }
-                
                 purple_conv_chat_remove_user(chat, who_n, NULL);
             }
             break;
@@ -1964,9 +2012,11 @@ bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
         {
             purple_debug_info("bnet", "JOIN CHANNEL %s %x %dms: %s\n",
                 who, flags, ping, what_utf);
+
+            bnet->channel_seen_self = FALSE;
             
             // if libpurple thinks we're in a channel, leave it
-            if (!bnet->first_join && bnet->channel_id != 0) {
+            if (!bnet->channel_first_join && bnet->channel_id != 0) {
                 if (chat != NULL) {    
                     purple_conv_chat_write(chat, "Battle.net", "You have left this chat channel. Battle.net only allows being in one channel at any time.", PURPLE_MESSAGE_SYSTEM, time(NULL));
                 }
@@ -1986,12 +2036,12 @@ bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
             
             // in clan, we are going to join clan's home instead
             if (bnet->clan_info != NULL) {
-                bnet->first_join = FALSE;
+                bnet->channel_first_join = FALSE;
             }
             
             // the PvPGN check...
-            if (bnet->first_join && strcmp("lobby", norm) == 0) {
-                bnet->first_join = FALSE;
+            if (bnet->channel_first_join && strcmp("lobby", norm) == 0) {
+                bnet->channel_first_join = FALSE;
             }
             
             // store current channel data
@@ -2001,7 +2051,7 @@ bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
             
             // the silent channel check: we don't get ourself in one case, when we are in a silent channel
             if ((bnet->channel_flags & BNET_CHAN_FLAG_SILENT) == BNET_CHAN_FLAG_SILENT) {
-                bnet->first_join = FALSE;
+                bnet->channel_first_join = FALSE;
                 serv_got_joined_chat(gc, chat_id, what_utf);
             }
             break;
@@ -2792,7 +2842,9 @@ bnet_recv_CDKEY(BnetConnectionData *bnet, BnetPacket *pkt)
             
             purple_debug_info("bnet", "Key check passed!\n");
             
-            purple_connection_update_progress(gc, "Authenticating", BNET_STEP_LOGON, BNET_STEP_COUNT);
+            if (!bnet->create_if_dne) {
+                purple_connection_update_progress(gc, "Authenticating", BNET_STEP_LOGON, BNET_STEP_COUNT);
+            }
                 
             bnet_account_logon(bnet);
             
@@ -2836,9 +2888,9 @@ static void
 bnet_recv_NEWS_INFO(BnetConnectionData *bnet, BnetPacket *pkt)
 {
     guint8 number_of_entries = bnet_packet_read_byte(pkt);
-    guint32 last_logon_timestamp = bnet_packet_read_dword(pkt);
-    guint32 oldest = bnet_packet_read_dword(pkt);
-    guint32 newest = bnet_packet_read_dword(pkt);
+    /*guint32 last_logon_timestamp = */bnet_packet_read_dword(pkt);
+    /*guint32 oldest = */bnet_packet_read_dword(pkt);
+    /*guint32 newest = */bnet_packet_read_dword(pkt);
     int i;
     
     purple_debug_info("bnet", "News items: %d\n", number_of_entries);
@@ -2849,7 +2901,7 @@ bnet_recv_NEWS_INFO(BnetConnectionData *bnet, BnetPacket *pkt)
         guint32 timestamp = bnet_packet_read_dword(pkt);
         gchar *message = bnet_packet_read_cstring(pkt);
         
-        purple_debug_info("bnet", "NEWS time %d: %s\n", timestamp, message);
+        purple_debug_info("bnet", "NEWS (time %d): %s\n", timestamp, message);
         
         item->timestamp = timestamp;
         item->message = message;
@@ -2927,7 +2979,9 @@ bnet_recv_AUTH_CHECK(BnetConnectionData *bnet, BnetPacket *pkt)
         
         purple_debug_info("bnet", "Version and key check passed!\n");
         
-        purple_connection_update_progress(gc, "Authenticating", BNET_STEP_LOGON, BNET_STEP_COUNT);
+        if (!bnet->create_if_dne) {
+            purple_connection_update_progress(gc, "Authenticating", BNET_STEP_LOGON, BNET_STEP_COUNT);
+        }
         
         bnet_account_logon(bnet);
         
@@ -2996,6 +3050,70 @@ bnet_recv_AUTH_CHECK(BnetConnectionData *bnet, BnetPacket *pkt)
 }
 
 static void
+bnet_recv_AUTH_ACCOUNTCREATE(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+    guint32 result = bnet_packet_read_dword(pkt);
+    
+    PurpleConnection *gc = bnet->account->gc;
+    
+    switch (result) {
+        case BNET_SUCCESS:
+        {
+            purple_debug_info("bnet", "Account created!\n");
+            bnet->create_if_dne = FALSE;
+            bnet_close(gc);
+            return;
+        }
+        case BNET_AUTH_ACCOUNT_EXISTS:
+            purple_connection_error_reason (gc,
+                PURPLE_CONNECTION_ERROR_NAME_IN_USE,
+                "Account name in use");
+            break;
+        case BNET_AUTH_ACCOUNT_SHORT:
+            purple_connection_error_reason (gc,
+                PURPLE_CONNECTION_ERROR_INVALID_USERNAME,
+                "Account name is too short.");
+            break;
+        case BNET_AUTH_ACCOUNT_BADCHAR:
+            purple_connection_error_reason (gc,
+                PURPLE_CONNECTION_ERROR_INVALID_USERNAME,
+                "Account name contains an illigal character");
+            break;
+        case BNET_AUTH_ACCOUNT_BADWORD:
+            purple_connection_error_reason (gc,
+                PURPLE_CONNECTION_ERROR_INVALID_USERNAME,
+                "Account name contains a banned word");
+            break;
+        case BNET_AUTH_ACCOUNT_NOTENOUGHALPHA:
+            purple_connection_error_reason (gc,
+                PURPLE_CONNECTION_ERROR_INVALID_USERNAME,
+                "Account name does not contain enough alphanumeric characters");
+            break;
+        case BNET_AUTH_ACCOUNT_ADJPUNCT:
+            purple_connection_error_reason (gc,
+                PURPLE_CONNECTION_ERROR_INVALID_USERNAME,
+                "Account name contains adjacent punctuation characters");
+            break;
+        case BNET_AUTH_ACCOUNT_TOOMANYPUNCT:
+            purple_connection_error_reason (gc,
+                PURPLE_CONNECTION_ERROR_INVALID_USERNAME,
+                "Account name contains too many punctuation characters");
+            break;
+        default:
+            purple_connection_error_reason (gc,
+                PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
+                "Account create failure");
+            break;
+    }
+    
+    if (bnet->account_data != NULL) {
+        srp_free(bnet->account_data);
+        bnet->account_data = NULL;
+    }
+}
+
+
+static void
 bnet_recv_AUTH_ACCOUNTLOGON(BnetConnectionData *bnet, BnetPacket *pkt)
 {
     guint32 result = bnet_packet_read_dword(pkt);
@@ -3005,35 +3123,31 @@ bnet_recv_AUTH_ACCOUNTLOGON(BnetConnectionData *bnet, BnetPacket *pkt)
     switch (result) {
         case BNET_SUCCESS:
         {
-            if (FALSE) { // BNLS
-                char *s_and_B = (char *)bnet_packet_read(pkt, 64);
-                
-                bnet_bnls_send_LOGONPROOF(bnet, s_and_B);
-                
-                g_free(s_and_B);
-            } else { // local
-                gchar M1[20];
-                gchar *salt = (gchar *)bnet_packet_read(pkt, 32);
-                gchar *B = (gchar *)bnet_packet_read(pkt, 32);
-                srp_get_M1(bnet->account_data, M1, B, salt);
-                bnet_send_AUTH_ACCOUNTLOGONPROOF(bnet, M1);
-                g_free(salt);
-                g_free(B);
-            }
+            /* BNLS version: 
+            char *s_and_B = (char *)bnet_packet_read(pkt, 64);
+            
+            bnet_bnls_send_LOGONPROOF(bnet, s_and_B);
+            
+            g_free(s_and_B); */
+            gchar M1[20];
+            gchar *salt = (gchar *)bnet_packet_read(pkt, 32);
+            gchar *B = (gchar *)bnet_packet_read(pkt, 32);
+            srp_get_M1(bnet->account_data, M1, B, salt);
+            bnet_send_AUTH_ACCOUNTLOGONPROOF(bnet, M1);
+            g_free(salt);
+            g_free(B);
             return;
         }
         case BNET_AUTH_ACCOUNT_DNE:
-            //purple_connection_error_reason (gc,
-            //    PURPLE_CONNECTION_ERROR_NAME_IN_USE,
-            //    "Account does not exist");
-            //if (bnet->create_if_dne) {
-                // not enabled for w3 until we no longer use BNLS for logon
-                //bnet_send_CREATEACCOUNT2(bnet);
-            //} else {
+            if (bnet->create_if_dne) {
+                gchar salt_and_v[64];
+                srp_generate_salt_and_v(bnet->account_data, salt_and_v);
+                bnet_send_AUTH_ACCOUNTCREATE(bnet, salt_and_v);
+            } else {
                 purple_connection_error_reason (gc,
                     PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
                     "Account does not exist");
-            //}
+            }
             break;
         case BNET_AUTH_ACCOUNT_REQUPGRADE:
             purple_connection_error_reason (gc,
@@ -3073,9 +3187,7 @@ bnet_recv_AUTH_ACCOUNTLOGONPROOF(BnetConnectionData *bnet, BnetPacket *pkt)
             g_free(M2);
             
             purple_debug_info("bnet", "Logged in!\n");
-            if (bnet->create_if_dne) {
-                purple_connection_update_progress(gc, "Entering chat", BNET_STEP_FINAL, BNET_STEP_COUNT);
-            }
+            purple_connection_update_progress(gc, "Entering chat", BNET_STEP_FINAL, BNET_STEP_COUNT);
             
             bnet_enter_chat(bnet);
             break;
@@ -3098,9 +3210,7 @@ bnet_recv_AUTH_ACCOUNTLOGONPROOF(BnetConnectionData *bnet, BnetPacket *pkt)
         }
         case BNET_AUTH_ACCOUNT_REQEMAIL:
             purple_debug_info("bnet", "Logged in!\n");
-            if (bnet->create_if_dne) {
-                purple_connection_update_progress(gc, "Entering chat", BNET_STEP_FINAL, BNET_STEP_COUNT);
-            }
+            purple_connection_update_progress(gc, "Entering chat", BNET_STEP_FINAL, BNET_STEP_COUNT);
             
             bnet_enter_chat(bnet);
             break;
@@ -3122,9 +3232,7 @@ bnet_recv_LOGONRESPONSE2(BnetConnectionData *bnet, BnetPacket *pkt)
     switch (result) {
         case BNET_SUCCESS:
             purple_debug_info("bnet", "Logged in!\n");
-            if (bnet->create_if_dne) {
-                purple_connection_update_progress(gc, "Entering chat", BNET_STEP_FINAL, BNET_STEP_COUNT);
-            }
+            purple_connection_update_progress(gc, "Entering chat", BNET_STEP_FINAL, BNET_STEP_COUNT);
             
             bnet_enter_chat(bnet);
             break;
@@ -3177,31 +3285,29 @@ bnet_recv_CREATEACCOUNT2(BnetConnectionData *bnet, BnetPacket *pkt)
         case BNET_SUCCESS:
             purple_debug_info("bnet", "Account created!\n");
             bnet->create_if_dne = FALSE;
-            purple_input_remove(bnet->sbnet.inpa);
-            close(bnet->sbnet.fd);
-            bnet->sbnet.fd = 0;
+            bnet_close(gc);
             break;
         case BNET_CREATEACC2_BADCHAR:
             //purple_connection_error_reason (gc,
             //    PURPLE_CONNECTION_ERROR_NAME_IN_USE,
             //    "Account does not exist");
             purple_connection_error_reason (gc,
-                PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
+                PURPLE_CONNECTION_ERROR_INVALID_USERNAME,
                 "Account name contains an illigal character");
             break;
         case BNET_CREATEACC2_BADWORD:
             purple_connection_error_reason (gc,
-                PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
+                PURPLE_CONNECTION_ERROR_INVALID_USERNAME,
                 "Account name contains a banned word");
             break;
         case BNET_CREATEACC2_EXISTS:
             purple_connection_error_reason (gc,
-                PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
+                PURPLE_CONNECTION_ERROR_NAME_IN_USE,
                 "Account name in use");
             break;
         case BNET_CREATEACC2_NOTENOUGHALPHA:
             purple_connection_error_reason (gc,
-                PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
+                PURPLE_CONNECTION_ERROR_INVALID_USERNAME,
                 "Account name does not contain enough alphanumeric characters");
             break;
         default:
@@ -3513,7 +3619,7 @@ bnet_recv_CLANMOTD(BnetConnectionData *bnet, BnetPacket *pkt)
     
     bnet_clan_packet_unregister(bnet->clan_info, BNET_SID_CLANMOTD, cookie);
     bnet_clan_info_set_motd(bnet->clan_info, motd);
-    if (!bnet->first_join && bnet->channel_id != 0) {
+    if (!bnet->channel_first_join && bnet->channel_id != 0) {
         conv = purple_find_chat(bnet->account->gc, bnet->channel_id);
     }
     if (conv != NULL) {
@@ -3622,6 +3728,9 @@ bnet_parse_packet(BnetConnectionData *bnet, const guint8 packet_id, const guint8
             break;
         case BNET_SID_AUTH_CHECK:
             bnet_recv_AUTH_CHECK(bnet, pkt);
+            break;
+        case BNET_SID_AUTH_ACCOUNTCREATE:
+            bnet_recv_AUTH_ACCOUNTCREATE(bnet, pkt);
             break;
         case BNET_SID_AUTH_ACCOUNTLOGON:
             bnet_recv_AUTH_ACCOUNTLOGON(bnet, pkt);
@@ -4097,11 +4206,12 @@ bnet_friend_update(const BnetConnectionData *bnet, int index,
 static void
 bnet_close(PurpleConnection *gc)
 {
+    purple_connection_set_state(gc, PURPLE_DISCONNECTED);
     BnetConnectionData *bnet = gc->proto_data;
     if (bnet != NULL) {
         purple_input_remove(bnet->sbnls.inpa);
         purple_input_remove(bnet->sbnet.inpa);
-        bnet->first_join = FALSE;
+        bnet->channel_first_join = FALSE;
         bnet->is_online = FALSE;
         bnet->sent_enter_channel = FALSE;
         if (bnet->ka_handle != 0) {
@@ -5099,7 +5209,7 @@ bnet_join_chat(PurpleConnection *gc, GHashTable *components)
         
         if (bnet->channel_users != NULL) {
             PurpleConvChat *chat = NULL;
-            if (!bnet->first_join && conv != NULL)
+            if (!bnet->channel_first_join && conv != NULL)
                 chat = purple_conversation_get_chat_data(conv);
             if (chat != NULL) {
                 GList *users = NULL;
@@ -5971,3 +6081,4 @@ init_plugin(PurplePlugin *plugin)
 PURPLE_INIT_PLUGIN(clbnet, init_plugin, info)
 
 #endif
+

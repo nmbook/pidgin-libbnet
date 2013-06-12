@@ -534,7 +534,9 @@ typedef struct {
     
     // channel data:
     // when this channel is the "first join" channel and should not be told to libpurple
-    gboolean first_join;
+    gboolean channel_first_join;
+    // we are waiting for "ourself" in the current channel, to pass the whole list to libpurple
+    gboolean channel_seen_self;
     // hash table containing join attempt
     GHashTable *join_attempt;
     // hash of current channel name
@@ -744,81 +746,97 @@ struct BnetCommand {
     { 0, 0, NULL, NULL, NULL }
 };
 
+
 static void bnet_channel_user_free(BnetChannelUser *bcu);
 static void bnet_friend_info_free(BnetFriendInfo *bfi);
+static void bnet_user_free(BnetUser *bu);
 static void bnet_buddy_free(PurpleBuddy *buddy);
+static void bnet_news_item_free(BnetNewsItem *item);
 static void bnet_connect(PurpleAccount *account, const gboolean do_register);
 static void bnet_login(PurpleAccount *account);
 static void bnet_bnls_login_cb(gpointer data, gint source, const gchar *error_message);
-static int bnet_bnls_send_CHOOSENLSREVISION(const BnetConnectionData *bnet);
-static int bnet_bnls_send_LOGONCHALLENGE(const BnetConnectionData *bnet);
-static int bnet_bnls_send_LOGONPROOF(const BnetConnectionData *bnet, const char *s_and_B);
-static int bnet_bnls_send_VERSIONCHECKEX2(const BnetConnectionData *bnet,
-       guint32 login_type, guint32 server_cookie, guint32 udp_cookie,
-       guint64 mpq_ft, char *mpq_fn, char *checksum_formula);
-static int bnet_bnls_send_REQUESTVERSIONBYTE(BnetConnectionData *bnet);
+static int  bnet_bnls_send_LOGONCHALLENGE(const BnetConnectionData *bnet);
+static int  bnet_bnls_send_VERSIONCHECKEX2(const BnetConnectionData *bnet,
+            guint32 login_type, guint32 server_cookie, guint32 udp_cookie,
+            guint64 mpq_ft, char *mpq_fn, char *checksum_formula);
+static int  bnet_bnls_send_REQUESTVERSIONBYTE(BnetConnectionData *bnet);
+static void bnet_bnls_input_cb(gpointer data, gint source, PurpleInputCondition cond);
 static void bnet_bnls_read_input(BnetConnectionData *bnet, int len);
 static void bnet_bnls_recv_CHOOSENLSREVISION(const BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_bnls_recv_LOGONCHALLENGE(const BnetConnectionData *bnet, BnetPacket *pkt);
-static void bnet_bnls_input_cb(gpointer data, gint source, PurpleInputCondition cond);
 static void bnet_bnls_recv_LOGONPROOF(const BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_bnls_recv_REQUESTVERSIONBYTE(BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_bnls_recv_VERSIONCHECKEX2(BnetConnectionData *bnet, BnetPacket *pkt);
-static void bnet_bnls_parse_packet(BnetConnectionData *bnet, const guint8 packet_id, const guint8 *packet_start, const guint16 packet_len);
+static void bnet_bnls_parse_packet(BnetConnectionData *bnet, const guint8 packet_id,
+            const guint8 *packet_start, const guint16 packet_len);
 static void bnet_login_cb(gpointer data, gint source, const gchar *error_message);
 static gboolean bnet_protocol_begin(const BnetConnectionData *bnet);
-static int bnet_send_protocol_byte(const BnetConnectionData *bnet, int byte);
-static int bnet_send_NULL(const BnetConnectionData *bnet);
-static int bnet_send_CLIENTID(const BnetConnectionData *bnet);
-static int bnet_send_SYSTEMINFO(const BnetConnectionData *bnet);
-static int bnet_send_CLIENTID2(const BnetConnectionData *bnet);
-static int bnet_send_LOCALEINFO(const BnetConnectionData *bnet);
-static int bnet_send_STARTVERSIONING(const BnetConnectionData *bnet);
-static int bnet_send_REPORTVERSION(const BnetConnectionData *bnet,
-           guint32 exe_version, guint32 exe_checksum, char *exe_info);
-static int bnet_send_ENTERCHAT(const BnetConnectionData *bnet);
-static int bnet_send_GETCHANNELLIST(const BnetConnectionData *bnet);
-static int bnet_send_JOINCHANNEL(const BnetConnectionData *bnet,
-           BnetChannelJoinFlags channel_flags, char *channel);
-/*static int bnet_queue_CHATCOMMAND(const BnetConnectionData *bnet, PurpleConversation *conv,
-        BnetCommandID cmd, BnetQueueFunc cb, const char *command);*/
-static int bnet_send_CHATCOMMAND(const BnetConnectionData *bnet, const char *command);
-//static int bnet_send_LEAVECHAT(const BnetConnectionData *bnet);
-static int bnet_send_CDKEY(const BnetConnectionData *bnet);
-static int bnet_send_CDKEY2(const BnetConnectionData *bnet);
-static int bnet_send_LOGONRESPONSE2(const BnetConnectionData *bnet);
-static int bnet_send_CREATEACCOUNT2(const BnetConnectionData *bnet);
-static int bnet_send_PING(const BnetConnectionData *bnet, guint32 cookie);
-static int bnet_send_READUSERDATA(const BnetConnectionData *bnet,
-    int request_cookie, const char *username, char **keys);
-static int bnet_send_WRITEUSERDATA(const BnetConnectionData *bnet,
-    const char *sex, const char *age, const char *location, const char *description);
-static int bnet_send_WRITEUSERDATA_2(const BnetConnectionData *bnet,
-    const char *key, const char *val);
-static int bnet_send_AUTH_INFO(const BnetConnectionData *bnet);
-static int bnet_send_AUTH_CHECK(const BnetConnectionData *bnet,
-       guint32 exe_version, guint32 exe_checksum, char *exe_info);
-static int bnet_send_AUTH_ACCOUNTLOGON(const BnetConnectionData *bnet, char *A);
-static int bnet_send_AUTH_ACCOUNTLOGONPROOF(const BnetConnectionData *bnet, char *M1);
-static int bnet_send_FRIENDSLIST(const BnetConnectionData *bnet);
-static int bnet_send_CLANSETMOTD(const BnetConnectionData *bnet, const int cookie, const gchar *motd);
-static int bnet_send_CLANMOTD(const BnetConnectionData *bnet, const int cookie);
-static int bnet_send_CLANMEMBERLIST(const BnetConnectionData *bnet, const int cookie);
+static int  bnet_send_protocol_byte(const BnetConnectionData *bnet, int byte);
+static int  bnet_send_NULL(const BnetConnectionData *bnet);
+static int  bnet_send_STARTVERSIONING(const BnetConnectionData *bnet);
+static int  bnet_send_REPORTVERSION(const BnetConnectionData *bnet,
+            guint32 exe_version, guint32 exe_checksum, char *exe_info);
+static int  bnet_send_ENTERCHAT(const BnetConnectionData *bnet);
+static int  bnet_send_GETCHANNELLIST(const const BnetConnectionData *bnet);
+static int  bnet_send_JOINCHANNEL(const BnetConnectionData *bnet,
+            BnetChannelJoinFlags channel_flags, char *channel);
+static int  bnet_send_CHATCOMMAND(const BnetConnectionData *bnet, const char *command);
+static int  bnet_send_CDKEY(const BnetConnectionData *bnet);
+static int  bnet_send_CDKEY2(const BnetConnectionData *bnet);
+static int  bnet_send_LOGONRESPONSE2(const BnetConnectionData *bnet);
+static int  bnet_send_CREATEACCOUNT2(const BnetConnectionData *bnet);
+static int  bnet_send_LOCALEINFO(const BnetConnectionData *bnet);
+static int  bnet_send_CLIENTID2(const BnetConnectionData *bnet);
+static int  bnet_send_CLIENTID(const BnetConnectionData *bnet);
+static int  bnet_send_SYSTEMINFO(const BnetConnectionData *bnet);
+static int  bnet_send_PING(const BnetConnectionData *bnet, guint32 cookie);
+static int  bnet_send_READUSERDATA(const BnetConnectionData *bnet,
+            int request_cookie, const char *username, char **keys);
+static int  bnet_send_WRITEUSERDATA(const BnetConnectionData *bnet,
+            const char *sex, const char *age, const char *location, const char *description);
+static int  bnet_send_WRITEUSERDATA_2(const BnetConnectionData *bnet,
+            const char *key, const char *val);
+static int  bnet_send_NEWS_INFO(const BnetConnectionData *bnet);
+static int  bnet_send_AUTH_INFO(const BnetConnectionData *bnet);
+static int  bnet_send_AUTH_CHECK(const BnetConnectionData *bnet,
+            guint32 exe_version, guint32 exe_checksum, char *exe_info);
+static int  bnet_send_AUTH_ACCOUNTCREATE(const BnetConnectionData *bnet, char *salt_and_v);
+static int  bnet_send_AUTH_ACCOUNTLOGON(const BnetConnectionData *bnet, char *A);
+static int  bnet_send_AUTH_ACCOUNTLOGONPROOF(const BnetConnectionData *bnet, char *M1);
+static int  bnet_send_FRIENDSLIST(const BnetConnectionData *bnet);
+static int  bnet_send_CLANCREATIONINVITATION(const BnetConnectionData *bnet, const int cookie,
+            const BnetClanTag clan_tag, const gchar *inviter_name, gboolean accept);
+static int  bnet_send_CLANINVITATIONRESPONSE(const BnetConnectionData *bnet, const int cookie,
+            const BnetClanTag clan_tag, const gchar *inviter_name, gboolean accept);
+static int  bnet_send_CLANSETMOTD(const BnetConnectionData *bnet, const int cookie, const gchar *motd);
+static int  bnet_send_CLANMOTD(const BnetConnectionData *bnet, const int cookie);
+static int  bnet_send_CLANMEMBERLIST(const BnetConnectionData *bnet, const int cookie);
 static void bnet_account_logon(BnetConnectionData *bnet);
+static void bnet_enter_channel(const BnetConnectionData *bnet);
 static void bnet_enter_chat(BnetConnectionData *bnet);
 static gboolean bnet_keepalive_timer(BnetConnectionData *bnet);
 static void bnet_account_register(PurpleAccount *account);
 static void bnet_account_chpw(PurpleConnection *gc, const char *oldpass, const char *newpass);
 static void bnet_input_cb(gpointer data, gint source, PurpleInputCondition cond);
 static void bnet_read_input(BnetConnectionData *bnet, int len);
+static void bnet_recv_STARTVERSIONING(BnetConnectionData *bnet, BnetPacket *pkt);
+static void bnet_recv_REPORTVERSION(BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_recv_ENTERCHAT(BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_recv_GETCHANNELLIST(BnetConnectionData *bnet, BnetPacket *pkt);
+static char *bnet_locale_to_utf8(const char *input);
+static char *bnet_locale_from_utf8(const char *input);
 static void bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_recv_MESSAGEBOX(BnetConnectionData *bnet, BnetPacket *pkt);
+static void bnet_recv_LOGONCHALLENGEEX(BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_recv_PING(BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_recv_READUSERDATA(BnetConnectionData *bnet, BnetPacket *pkt);
+static void bnet_recv_LOGONCHALLENGE(BnetConnectionData *bnet, BnetPacket *pkt);
+static void bnet_recv_CDKEY(BnetConnectionData *bnet, BnetPacket *pkt);
+static void bnet_recv_CDKEY2(BnetConnectionData *bnet, BnetPacket *pkt);
+static void bnet_recv_NEWS_INFO(BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_recv_AUTH_INFO(BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_recv_AUTH_CHECK(BnetConnectionData *bnet, BnetPacket *pkt);
+static void bnet_recv_AUTH_ACCOUNTCREATE(BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_recv_AUTH_ACCOUNTLOGON(BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_recv_AUTH_ACCOUNTLOGONPROOF(BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_recv_LOGONRESPONSE2(BnetConnectionData *bnet, BnetPacket *pkt);
@@ -828,36 +846,55 @@ static void bnet_recv_FRIENDSUPDATE(BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_recv_FRIENDSADD(BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_recv_FRIENDSREMOVE(BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_recv_FRIENDSPOSITION(BnetConnectionData *bnet, BnetPacket *pkt);
-static void bnet_parse_packet(BnetConnectionData *bnet, const guint8 packet_id, const guint8 *packet_start, const guint16 packet_len);
+static void bnet_recv_CLANFINDCANDIDATES(BnetConnectionData *bnet, BnetPacket *pkt);
+static void bnet_recv_CLANINVITEMULTIPLE(BnetConnectionData *bnet, BnetPacket *pkt);
+static void bnet_recv_CLANCREATIONINVITATION(BnetConnectionData *bnet, BnetPacket *pkt);
+static void bnet_recv_CLANDISBAND(BnetConnectionData *bnet, BnetPacket *pkt);
+static void bnet_recv_CLANMAKECHIEFTAIN(BnetConnectionData *bnet, BnetPacket *pkt);
+static void bnet_recv_CLANINFO(BnetConnectionData *bnet, BnetPacket *pkt);
+static void bnet_recv_CLANQUITNOTIFY(BnetConnectionData *bnet, BnetPacket *pkt);
+static void bnet_recv_CLANINVITATION(BnetConnectionData *bnet, BnetPacket *pkt);
+static void bnet_recv_CLANREMOVEMEMBER(BnetConnectionData *bnet, BnetPacket *pkt);
+static void bnet_recv_CLANINVITATIONRESPONSE(BnetConnectionData *bnet, BnetPacket *pkt);
+static void bnet_recv_CLANRANKCHANGE(BnetConnectionData *bnet, BnetPacket *pkt);
+static void bnet_recv_CLANMOTD(BnetConnectionData *bnet, BnetPacket *pkt);
+static void bnet_recv_CLANMEMBERLIST(BnetConnectionData *bnet, BnetPacket *pkt);
+static void bnet_recv_CLANMEMBERREMOVED(BnetConnectionData *bnet, BnetPacket *pkt);
+static void bnet_recv_CLANMEMBERSTATUSCHANGE(BnetConnectionData *bnet, BnetPacket *pkt);
+static void bnet_recv_CLANMEMBERRANKCHANGE(BnetConnectionData *bnet, BnetPacket *pkt);
+static void bnet_recv_CLANMEMBERINFORMATION(BnetConnectionData *bnet, BnetPacket *pkt);
+static void bnet_parse_packet(BnetConnectionData *bnet, const guint8 packet_id,
+            const guint8 *packet_start, const guint16 packet_len);
 static void bnet_clan_invite_accept_cb(void *data, int act_index);
 static void bnet_clan_invite_decline_cb(void *data, int act_index);
-/*static void bnet_queue(const BnetConnectionData *bnet, BnetQueueElement *qel);
-static void bnet_dequeue_tick(const BnetConnectionData *bnet);
-static int bnet_dequeue(const BnetConnectionData *bnet);*/
 static gint bnet_channel_user_compare(gconstpointer a, gconstpointer b);
 static PurpleCmdRet bnet_handle_cmd(PurpleConversation *conv, const gchar *cmdword,
-                                  gchar **args, gchar **error, void *data);
+            gchar **args, gchar **error, void *data);
 static double bnet_get_tz_bias(void);
-static guint64 bnet_get_filetime(time_t time);
 static char *bnet_format_time(guint64 unixtime);
 static char *bnet_format_filetime(char *ftime_str);
+static guint64 bnet_get_filetime(time_t time);
 static char *bnet_format_strsec(char *secs_str);
 static void bnet_friend_update(const BnetConnectionData *bnet, int index,
-        BnetFriendInfo *bfi, BnetFriendStatus status,
-        BnetFriendLocation location, BnetProductID product_id,
-        const gchar *location_name);
+            BnetFriendInfo *bfi, BnetFriendStatus status,
+            BnetFriendLocation location, BnetProductID product_id,
+            const gchar *location_name);
 static void bnet_close(PurpleConnection *gc);
-static int bnet_send_raw(PurpleConnection *gc, const char *buf, int len);
-static int bnet_send_whisper(PurpleConnection *gc, const char *who,
-                             const char *message, PurpleMessageFlags flags);
+static int  bnet_send_raw(PurpleConnection *gc, const char *buf, int len);
+static int  bnet_send_whisper(PurpleConnection *gc, const char *who,
+            const char *message, PurpleMessageFlags flags);
 static void bnet_get_info(PurpleConnection *gc, const char *who);
 static void bnet_whois_complete(gpointer user_data);
 static void bnet_whois_user(const BnetConnectionData *bnet, const char *who);
 static void bnet_profiledata_user(BnetConnectionData *bnet, const char *who);
+static void bnet_action_set_motd_cb(gpointer data);
+static gint bnet_news_item_sort(gconstpointer a, gconstpointer b);
+static void bnet_action_show_news(PurplePluginAction *action);
+static void bnet_action_set_motd(PurplePluginAction *action);
 static void bnet_action_set_user_data(PurplePluginAction *action);
 static void bnet_profile_get_for_edit(BnetConnectionData *bnet);
 static void bnet_profile_show_write_dialog(BnetConnectionData *bnet,
-        const char *psex, const char *page, const char *ploc, const char *pdescr);
+            const char *psex, const char *page, const char *ploc, const char *pdescr);
 static void bnet_profile_write_cb(gpointer data);
 static gboolean bnet_channeldata_user(BnetConnectionData *bnet, const char *who);
 static GHashTable *bnet_chat_info_defaults(PurpleConnection *gc, const char *chat_name);
@@ -869,11 +906,10 @@ static int bnet_chat_im(PurpleConnection *gc, int chat_id, const char *message, 
 static const char *bnet_list_icon(PurpleAccount *a, PurpleBuddy *b);
 static const char *bnet_list_emblem(PurpleBuddy *b);
 static char *bnet_status_text(PurpleBuddy *b);
-static void bnet_tooltip_text(PurpleBuddy *buddy,
-                       PurpleNotifyUserInfo *info,
-                       gboolean full);
-static gchar *bnet_get_location_text(BnetFriendLocation location, char *location_name);
-static gchar *bnet_get_product_name(BnetProductID product);
+static void bnet_tooltip_text(PurpleBuddy *buddy, PurpleNotifyUserInfo *info,
+            gboolean full);
+static char *bnet_get_location_text(BnetFriendLocation location, char *location_name);
+static char *bnet_get_product_name(BnetProductID product);
 static gchar *bnet_get_product_id_str(BnetProductID product);
 static GList *bnet_status_types(PurpleAccount *account);
 static void bnet_add_buddy(PurpleConnection *gc, PurpleBuddy *buddy, PurpleGroup *group);
@@ -892,5 +928,7 @@ static gboolean bnet_is_w3(const BnetConnectionData *bnet);
 static BnetVersioningSystem bnet_get_versioningsystem(const BnetConnectionData *bnet);
 static int bnet_get_key_count(const BnetConnectionData *bnet);
 static GList *bnet_actions(PurplePlugin *plugin, gpointer context);
+static void init_plugin(PurplePlugin *plugin);
 
 #endif
+
