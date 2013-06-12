@@ -1738,11 +1738,14 @@ bnet_locale_to_utf8(const char *input)
         return g_strdup(input);
     } else {
         GError *err = NULL;
-        output = g_locale_to_utf8(input, -1, NULL, NULL, &err);
+        output = g_convert_with_fallback(input, -1, "UTF-8", "ISO-8859-1", NULL, NULL, NULL, &err);
         if (err != NULL) {
-            purple_debug_error("bnet", "Unable to convert to UTF-8: %s\n", err->message);
+            purple_debug_error("bnet", "Unable to convert to UTF-8 from ISO-8859-1: %s\n", err->message);
+            if (output == NULL) {
+                output = g_strdup(err->message);
+            }
             g_error_free(err);
-            return g_strdup("(there was an error reading UTF-8)");
+            return output;
         }
     }
     
@@ -1753,11 +1756,14 @@ static char *
 bnet_locale_from_utf8(const char *input)
 {
     GError *err = NULL;
-    char *output = g_locale_from_utf8(input, -1, NULL, NULL, &err);
+    char *output = g_convert_with_fallback(input, -1, "ISO-8859-1", "UTF-8", NULL, NULL, NULL, &err);
     if (err != NULL) {
-        purple_debug_error("bnet", "Unable to convert from UTF-8: %s\n", err->message);
+        purple_debug_error("bnet", "Unable to convert to ISO-8859-1 from UTF-8: %s\n", err->message);
+        if (output == NULL) {
+            output = g_strdup(err->message);
+        }
         g_error_free(err);
-        return g_strdup("(there was an error reading UTF-8)");
+        return output;
     }
     
     return output;
@@ -1787,6 +1793,7 @@ bnet_recv_CHATEVENT(BnetConnectionData *bnet, BnetPacket *pkt)
         purple_connection_set_state(gc, PURPLE_CONNECTED);
         bnet->is_online = TRUE;
         bnet->channel_first_join = TRUE;
+        bnet->channel_seen_self = FALSE;
         
         bnet->ka_handle = purple_timeout_add_seconds(30, (GSourceFunc)bnet_keepalive_timer, bnet);
         
