@@ -160,7 +160,7 @@ bnet_connect(PurpleAccount *account, const gboolean do_register)
     bnet->clan_info = NULL;
     bnet->news = NULL;
     
-    bnet->create_if_dne = do_register;
+    bnet->account_create = do_register;
     
     //bnet->action_q = g_queue_new();
     
@@ -175,7 +175,7 @@ bnet_connect(PurpleAccount *account, const gboolean do_register)
     
     // begin connections
     purple_debug_info("bnet", "Connecting to BNLS %s...\n", bnet->bnls_server);
-    if (!bnet->create_if_dne) {
+    if (!bnet->account_create) {
         purple_connection_update_progress(gc, "Connecting to BNLS", BNET_STEP_BNLS, BNET_STEP_COUNT);
     }
     bnls_conn_data = purple_proxy_connect(gc, account, bnet->bnls_server, bnet->bnls_port,
@@ -371,13 +371,13 @@ bnet_bnls_input_cb(gpointer data, gint source, PurpleInputCondition cond)
         purple_input_remove(bnet->sbnls.inpa);
         if (bnet->versioning_complete == FALSE) {
             purple_connection_error_reason (gc,
-                PURPLE_CONNECTION_ERROR_NETWORK_ERROR,
-                "BNLS server closed the connection\n");
+                    PURPLE_CONNECTION_ERROR_NETWORK_ERROR,
+                    "BNLS server closed the connection\n");
             if (bnet->sbnet.fd > 0) {
                 purple_input_remove(bnet->sbnet.inpa);
                 close(bnet->sbnet.fd);
                 bnet->sbnet.fd = 0;
-        }
+            }
         }
         purple_debug_info("bnet", "BNLS disconnected.\n");
         close(bnet->sbnls.fd);
@@ -466,7 +466,7 @@ bnet_bnls_recv_REQUESTVERSIONBYTE(BnetConnectionData *bnet, BnetPacket *pkt)
     
     // connect to bnet
     purple_debug_info("bnet", "Connecting to %s...\n", bnet->server);
-    if (!bnet->create_if_dne) {
+    if (!bnet->account_create) {
         purple_connection_update_progress(gc, "Connecting to Battle.net", BNET_STEP_CONNECTING, BNET_STEP_COUNT);
     }
     conn_data = purple_proxy_connect(gc, account, bnet->server, bnet->port,
@@ -573,7 +573,7 @@ bnet_login_cb(gpointer data, gint source, const gchar *error_message)
     }
     
     purple_debug_info("bnet", "Connected!\n");
-    if (!bnet->create_if_dne) {
+    if (!bnet->account_create) {
         purple_connection_update_progress(gc, "Checking product key and version", BNET_STEP_CREV, BNET_STEP_COUNT);
     }
     
@@ -1419,19 +1419,24 @@ static void
 bnet_account_logon(BnetConnectionData *bnet)
 {
     if (bnet->logon_system == 0) {
-        bnet_send_LOGONRESPONSE2(bnet);
+        if (bnet->account_create) {
+            bnet_send_CREATEACCOUNT2(bnet);
+        } else {
+            bnet_send_LOGONRESPONSE2(bnet);
+        }
     } else {
-        // // BNLS NLS/SRP: disabled
-        // bnet_bnls_send_CHOOSENLSREVISION(bnet);
-        
-        // // local NLS/SRP:
         const char *username = bnet->username;
         const char *password = purple_account_get_password(bnet->account);
-        
-        gchar A[32];
         bnet->account_data = srp_init(username, password);
-        srp_get_A(bnet->account_data, A);
-        bnet_send_AUTH_ACCOUNTLOGON(bnet, A);
+        if (bnet->account_create) {
+            gchar salt_and_v[64];
+            srp_generate_salt_and_v(bnet->account_data, salt_and_v);
+            bnet_send_AUTH_ACCOUNTCREATE(bnet, salt_and_v);
+        } else {
+            gchar A[32];
+            srp_get_A(bnet->account_data, A);
+            bnet_send_AUTH_ACCOUNTLOGON(bnet, A);
+        }
     }
 }
 
@@ -1498,8 +1503,6 @@ bnet_account_register(PurpleAccount *account)
 {
     purple_debug_info("bnet", "REGISTER ACCOUNT REQUEST");
     bnet_connect(account, TRUE);
-    //PurpleConnection *gc = purple_account_get_connection(account);
-    //bnet->create_if_dne = TRUE;
 }
 
 static void
@@ -1655,7 +1658,7 @@ bnet_recv_REPORTVERSION(BnetConnectionData *bnet, BnetPacket *pkt)
                     default:
                         purple_debug_fatal("bnet", "Received SID_REPORTVERSION during AUTH logon sequence. Key required for this product. Unknown next packet. Logging on to account instead.");
                         
-                        if (!bnet->create_if_dne) {
+                        if (!bnet->account_create) {
                             purple_connection_update_progress(gc, "Authenticating", BNET_STEP_LOGON, BNET_STEP_COUNT);
                         }
                         
@@ -1663,7 +1666,7 @@ bnet_recv_REPORTVERSION(BnetConnectionData *bnet, BnetPacket *pkt)
                         break;
                 }
             } else {
-                if (!bnet->create_if_dne) {
+                if (!bnet->account_create) {
                     purple_connection_update_progress(gc, "Authenticating", BNET_STEP_LOGON, BNET_STEP_COUNT);
                 }
                 
@@ -2849,7 +2852,7 @@ bnet_recv_CDKEY(BnetConnectionData *bnet, BnetPacket *pkt)
             
             purple_debug_info("bnet", "Key check passed!\n");
             
-            if (!bnet->create_if_dne) {
+            if (!bnet->account_create) {
                 purple_connection_update_progress(gc, "Authenticating", BNET_STEP_LOGON, BNET_STEP_COUNT);
             }
                 
@@ -2986,7 +2989,7 @@ bnet_recv_AUTH_CHECK(BnetConnectionData *bnet, BnetPacket *pkt)
         
         purple_debug_info("bnet", "Version and key check passed!\n");
         
-        if (!bnet->create_if_dne) {
+        if (!bnet->account_create) {
             purple_connection_update_progress(gc, "Authenticating", BNET_STEP_LOGON, BNET_STEP_COUNT);
         }
         
@@ -3065,15 +3068,13 @@ bnet_recv_AUTH_ACCOUNTCREATE(BnetConnectionData *bnet, BnetPacket *pkt)
     
     switch (result) {
         case BNET_SUCCESS:
-        {
             purple_debug_info("bnet", "Account created!\n");
-            bnet->create_if_dne = FALSE;
+            bnet->account_create = FALSE;
             bnet_close(gc);
             return;
-        }
         case BNET_AUTH_ACCOUNT_EXISTS:
             purple_connection_error_reason (gc,
-                PURPLE_CONNECTION_ERROR_NAME_IN_USE,
+                PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
                 "Account name in use");
             break;
         case BNET_AUTH_ACCOUNT_SHORT:
@@ -3130,12 +3131,6 @@ bnet_recv_AUTH_ACCOUNTLOGON(BnetConnectionData *bnet, BnetPacket *pkt)
     switch (result) {
         case BNET_SUCCESS:
         {
-            /* BNLS version: 
-            char *s_and_B = (char *)bnet_packet_read(pkt, 64);
-            
-            bnet_bnls_send_LOGONPROOF(bnet, s_and_B);
-            
-            g_free(s_and_B); */
             gchar M1[20];
             gchar *salt = (gchar *)bnet_packet_read(pkt, 32);
             gchar *B = (gchar *)bnet_packet_read(pkt, 32);
@@ -3146,15 +3141,9 @@ bnet_recv_AUTH_ACCOUNTLOGON(BnetConnectionData *bnet, BnetPacket *pkt)
             return;
         }
         case BNET_AUTH_ACCOUNT_DNE:
-            if (bnet->create_if_dne) {
-                gchar salt_and_v[64];
-                srp_generate_salt_and_v(bnet->account_data, salt_and_v);
-                bnet_send_AUTH_ACCOUNTCREATE(bnet, salt_and_v);
-            } else {
-                purple_connection_error_reason (gc,
-                    PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
-                    "Account does not exist");
-            }
+            purple_connection_error_reason (gc,
+                PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
+                "Account does not exist");
             break;
         case BNET_AUTH_ACCOUNT_REQUPGRADE:
             purple_connection_error_reason (gc,
@@ -3244,16 +3233,9 @@ bnet_recv_LOGONRESPONSE2(BnetConnectionData *bnet, BnetPacket *pkt)
             bnet_enter_chat(bnet);
             break;
         case BNET_LOGONRESP2_DNE:
-            //purple_connection_error_reason (gc,
-            //    PURPLE_CONNECTION_ERROR_NAME_IN_USE,
-            //    "Account does not exist");
-            if (bnet->create_if_dne) {
-                bnet_send_CREATEACCOUNT2(bnet);
-            } else {
-                purple_connection_error_reason (gc,
-                    PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
-                    "Account does not exist");
-            }
+            purple_connection_error_reason (gc,
+                PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
+                "Account does not exist");
             break;
         case BNET_LOGONRESP2_BADPW:
             purple_connection_error_reason (gc,
@@ -3291,13 +3273,10 @@ bnet_recv_CREATEACCOUNT2(BnetConnectionData *bnet, BnetPacket *pkt)
     switch (result) {
         case BNET_SUCCESS:
             purple_debug_info("bnet", "Account created!\n");
-            bnet->create_if_dne = FALSE;
+            bnet->account_create = FALSE;
             bnet_close(gc);
             break;
         case BNET_CREATEACC2_BADCHAR:
-            //purple_connection_error_reason (gc,
-            //    PURPLE_CONNECTION_ERROR_NAME_IN_USE,
-            //    "Account does not exist");
             purple_connection_error_reason (gc,
                 PURPLE_CONNECTION_ERROR_INVALID_USERNAME,
                 "Account name contains an illigal character");
@@ -3309,7 +3288,7 @@ bnet_recv_CREATEACCOUNT2(BnetConnectionData *bnet, BnetPacket *pkt)
             break;
         case BNET_CREATEACC2_EXISTS:
             purple_connection_error_reason (gc,
-                PURPLE_CONNECTION_ERROR_NAME_IN_USE,
+                PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
                 "Account name in use");
             break;
         case BNET_CREATEACC2_NOTENOUGHALPHA:

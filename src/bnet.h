@@ -496,7 +496,7 @@ typedef struct {
     
     // account data:
     // whether we should create the account if DNE during this logon
-    gboolean create_if_dne; 
+    gboolean account_create; 
     // whether we should change passwords during this logon
     gboolean change_pw;
     // what to change password from
