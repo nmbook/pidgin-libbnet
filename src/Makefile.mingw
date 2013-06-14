@@ -1,0 +1,75 @@
+# Makefile for Windows.
+# On Cygwin:
+#  make
+# This should work on any of these systems:
+#  Cygwin under 32-bit Windows
+#  Cygwin under 32-bit Windows (using WOW64)
+
+# modify this to use a different compiler
+CC := gcc
+# modify this to add/remove the -g flag for
+CC_DEBUG := no
+
+# tops for -I and -L
+PIDGIN_TREE_TOP := ../../pidgin-2.10.7
+PURPLE_TOP := $(PIDGIN_TREE_TOP)/libpurple
+W32_TOP := $(PIDGIN_TREE_TOP)/../win32-dev
+
+# list of warnings, same as for official Pidgin protocols, except we add:
+# -Wno-multichar
+#   A lot of B.net depends on using constants such as 'WAR3' as "character" constants.
+#   Rather than convert them to hex equivs (would have been error-prone, and left it harder
+#   to look at later), I just added this flag to the compile
+CC_WARNINGS = -Wall -Waggregate-return -Wcast-align -Wdeclaration-after-statement -Werror-implicit-function-declaration -Wextra -Wno-sign-compare -Wno-unused-parameter -Winit-self -Wmissing-declarations -Wmissing-prototypes -Wnested-externs -Wpointer-arith -Wundef -Wno-multichar
+
+ifeq ($(CC_DEBUG),yes)
+CC_DBG = -g
+else
+CC_DBG =
+endif
+
+CC_COMPFLAGS = -mms-bitfields -DWIN32_LEAN_AND_MEAN
+CC_LINKFLAGS = -Wl,--enable-auto-image-base
+
+# flags to compile a .c -> .o
+CC_COMPILE = $(CC_WARNINGS) -pipe $(CC_COMPFLAGS) $(CC_DBG) $(INC_PATHS) -c $(@:%.o=%.c) -o $@
+# flags to link .o's -> .dll or .so
+CC_LINK = -shared $(OBJECTS) $(LIB_PATHS) $(LIBS) $(CC_LINKFLAGS) -o $@
+
+# -I: self, purple, glib, gmp
+INC_PATHS = -I. -I$(PURPLE_TOP) -I$(PURPLE_TOP)/win32 -I$(W32_TOP)/gtk_2_0-2.14/include/glib-2.0 -I$(W32_TOP)/gtk_2_0-2.14/lib/glib-2.0/include -I$(W32_TOP)/gmp/include
+# -L: purple, glib, gmp
+LIB_PATHS = -L$(PURPLE_TOP) -L$(W32_TOP)/gtk_2_0-2.14/lib -L$(W32_TOP)/gmp/lib
+# -l
+W32_LIBS = -lintl -lws2_32
+LIBS = -lpurple -lglib-2.0 -lgmp-3 $(W32_LIBS)
+
+TARGET = libbnet
+SOURCES = bnet.c bufferer.c srp.c keydecode.c sha1.c w3clan.c userdata.c
+OBJECTS = $(SOURCES:%.c=%.o)
+
+#Standard stuff here
+.PHONY: all clean install makedir-win32
+
+all: $(TARGET).dll
+
+%.o: %.c
+	$(CC) $(CC_COMPILE)
+
+$(TARGET).dll: $(OBJECTS)
+	$(CC) $(CC_LINK)
+
+# stops implicit rule spam in make -d
+Makefile: ;
+# stops more implicit rule spam
+%.c: ;
+
+clean:
+	rm -f *.o
+
+install:
+	mkdir -p $$APPDATA/.purple/plugins
+	cp $(TARGET).dll $$APPDATA/.purple/plugins/$(TARGET).dll
+	cp pixmaps/pidgin/protocols/16/bnet.png $$PROGRAMFILES/Pidgin/pixmaps/pidgin/protocols/16/bnet.png
+	cp pixmaps/pidgin/protocols/22/bnet.png $$PROGRAMFILES/Pidgin/pixmaps/pidgin/protocols/22/bnet.png
+	cp pixmaps/pidgin/protocols/48/bnet.png $$PROGRAMFILES/Pidgin/pixmaps/pidgin/protocols/48/bnet.png
