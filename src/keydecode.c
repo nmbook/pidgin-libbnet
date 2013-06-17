@@ -214,8 +214,10 @@ gboolean bnet_key_decode_legacy_verify_only(char *key,
      const char *key1_string)
 {
     char key1[14];
-    
+    BnetKey *key_tmp;
+    CDKeyDecoder *ctx;
     int i, j;
+
     for (i = 0, j = 0; i < strlen(key1_string) && j < 13; i++) {
         if (isalnum(key1_string[i])) {
             key1[j] = toupper(key1_string[i]);
@@ -224,8 +226,8 @@ gboolean bnet_key_decode_legacy_verify_only(char *key,
     }
     key1[j] = '\0';
     
-    BnetKey *key_tmp = g_new0(BnetKey, 1);
-    CDKeyDecoder *ctx = bnet_key_create_context(key1);
+    key_tmp = g_new0(BnetKey, 1);
+    ctx = bnet_key_create_context(key1);
     if (bnet_is_key_valid(ctx)) {
         key_tmp->length = strlen(key1);
         key_tmp->product_value = bnet_key_get_product(ctx);
@@ -253,8 +255,9 @@ gboolean bnet_key_decode_legacy(BnetKey *key,
      const char *key1_string)
 {
     char key1[17];
-    
+    CDKeyDecoder *ctx;
     int i, j;
+
     for (i = 0, j = 0; i < strlen(key1_string) && j < 16; i++) {
         if (isalnum(key1_string[i])) {
             key1[j] = toupper(key1_string[i]);
@@ -263,7 +266,7 @@ gboolean bnet_key_decode_legacy(BnetKey *key,
     }
     key1[j] = '\0';
     
-    CDKeyDecoder *ctx = bnet_key_create_context(key1);
+    ctx = bnet_key_create_context(key1);
     if (bnet_is_key_valid(ctx)) {
         key->length = strlen(key1);
         key->product_value = bnet_key_get_product(ctx);
@@ -464,18 +467,19 @@ guint32 bnet_key_get_long_val2(CDKeyDecoder *ctx, char* out)
 gsize bnet_key_calculate_hash_legacy(CDKeyDecoder *ctx, const guint32 clientToken,
     const guint32 serverToken)
 {
+    guint32 product, value1, value2;
+    sha1_context sha;
+    guint8 res[SHA1_HASH_SIZE];
+
     if (!ctx->initialized || !ctx->keyOK) return 0;
     if (ctx->keyType != CDKEY_TYPE_W2D2) return 0;
     ctx->hashLen = 0;
     
-    guint32 product = (guint32) bnet_key_get_product(ctx);
-    guint32 value1 = (guint32) bnet_key_get_val1(ctx);
-    guint32 value2 = (guint32) bnet_key_get_val2(ctx);
+    product = (guint32) bnet_key_get_product(ctx);
+    value1 = (guint32) bnet_key_get_val1(ctx);
+    value2 = (guint32) bnet_key_get_val2(ctx);
     
     if (product != 0x04) return 0;
-    
-    sha1_context sha;
-    guint8 res[SHA1_HASH_SIZE];
     
     sha.version = SHA1_TYPE_BROKEN;
     sha1_reset(&sha);
@@ -559,7 +563,7 @@ gsize bnet_key_calculate_hash(CDKeyDecoder *ctx, const guint32 clientToken,
             //sha1_input(&sha, (guint8 *)(&zero), BNET_SIZE_DWORD);
             sha1_input(&sha, (guint8 *)(value2x), 10);
             sha1_digest(&sha, res);
-            purple_debug_info("bnet", "value2x = %x %x %x\n", *((guint32 *)(value2x)+0), *((guint32 *)(value2x)+4), *((guint16 *)(value2x)+8));
+            //purple_debug_info("bnet", "value2x = %x %x %x\n", *((guint32 *)(value2x)+0), *((guint32 *)(value2x)+4), *((guint16 *)(value2x)+8));
             ctx->keyHash = g_malloc0(SHA1_HASH_SIZE);
             g_memmove(ctx->keyHash, res, SHA1_HASH_SIZE);
             ctx->hashLen = SHA1_HASH_SIZE;
@@ -762,7 +766,7 @@ gboolean process_w3(CDKeyDecoder *ctx)
 
         ctx->product = values[0] >> 0xA;
         ctx->product = SWAP4(ctx->product);
-#if BIGENDIAN
+#if defined(BIGENDIAN) && BIGENDIAN
 #else
         for (i = 0; i < 4; i++) {
                 values[i] = MSB4(values[i]);
@@ -772,7 +776,7 @@ gboolean process_w3(CDKeyDecoder *ctx)
         ctx->value1 = LSB4(*(guint32 *) (((char*) values) + 2)) & 0xFFFFFF03;
         
         ctx->w3value2 = g_malloc0(10);
-#if BIGENDIAN
+#if defined(BIGENDIAN) && BIGENDIAN
         *((guint16 *) ctx->w3value2) = LSB2(*((guint16 *) (((char*) values) + 6)));
         *((guint32 *) ((char*) ctx->w3value2 + 2)) = LSB4(*((guint32 *) (((char*) values) + 8)));
         *((guint32 *) ((char*) ctx->w3value2 + 6)) = LSB4(*((guint32 *) (((char*) values) + 12)));

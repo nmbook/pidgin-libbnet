@@ -51,23 +51,23 @@ gboolean bnet_packet_insert(BnetPacket *bnet_packet, gconstpointer data, const g
     return TRUE;
 }
 
-BnetPacket *bnet_packet_refer(const guint8 *start, const gsize length)
+BnetPacket *bnet_packet_refer(const gchar *start, const gsize length)
 {
     BnetPacket *bnet_packet = g_new0(BnetPacket, 1);
     bnet_packet->pos = 4;
     bnet_packet->len = length;
-    bnet_packet->data = (guint8 *)start;
+    bnet_packet->data = (gchar *)start;
     bnet_packet->allocd = FALSE;
     
     return bnet_packet;
 }
 
-BnetPacket *bnet_packet_refer_bnls(const guint8 *start, const gsize length)
+BnetPacket *bnet_packet_refer_bnls(const gchar *start, const gsize length)
 {
     BnetPacket *bnet_packet = g_new0(BnetPacket, 1);
     bnet_packet->pos = 3;
     bnet_packet->len = length;
-    bnet_packet->data = (guint8 *)start;
+    bnet_packet->data = (gchar *)start;
     bnet_packet->allocd = FALSE;
     
     return bnet_packet;

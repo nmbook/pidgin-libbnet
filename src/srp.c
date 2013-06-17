@@ -413,7 +413,7 @@ void srp_get_A(srp_t *srp, gchar *out)
 void srp_get_K(srp_t *srp, gchar *out, const gchar *S)
 {
     gchar odd[16], even[16];
-    guint8 odd_hash[20], even_hash[20];
+    guint8 odd_hash[SHA1_HASH_SIZE], even_hash[SHA1_HASH_SIZE];
     
     gchar *Sp = (gchar *) S;
     gchar *op = odd;
@@ -461,7 +461,7 @@ void srp_get_K(srp_t *srp, gchar *out, const gchar *S)
 void srp_get_M1(srp_t *srp, gchar *out, const gchar *B, const gchar *salt)
 {
     sha1_context ctx;
-    guint8 username_hash[20];
+    guint8 username_hash[SHA1_HASH_SIZE];
     gchar A[32];
     gchar S[32];
     gchar K[40];
@@ -511,12 +511,12 @@ void srp_get_M1(srp_t *srp, gchar *out, const gchar *B, const gchar *salt)
 int srp_check_M2(srp_t *srp, const gchar *var_M2)
 {
     sha1_context ctx;
-    gchar local_M2[20];
+    gchar local_M2[SHA1_HASH_SIZE];
     gchar *A;
     gchar S[32];
     gchar *K;
     gchar *M1;
-    guint8 username_hash[20];
+    guint8 username_hash[SHA1_HASH_SIZE];
     int res;
     int mustFree = 0;
 
@@ -682,7 +682,7 @@ static guint32 srp_pre_seed()
 static void srp_get_x(srp_t *srp, mpz_t x_c, const gchar *raw_salt)
 {
     gchar *userpass;
-    guint8 hash[20], final_hash[20];
+    guint8 hash[SHA1_HASH_SIZE], final_hash[SHA1_HASH_SIZE];
     sha1_context ctx;
     
     ctx.version = SHA1_TYPE_NORMAL;
@@ -726,17 +726,17 @@ static guint32 srp_get_u(const gchar *B)
 {
     sha1_context ctx;
     union {
-	guint8 as8[20];
-	guint32 as32[5];
+        guint8 as8[SHA1_HASH_SIZE];
+        guint32 as32[5];
     } data;
     guint32 u;
-    
+
     ctx.version = SHA1_TYPE_NORMAL;
-    
+
     sha1_reset(&ctx);
     sha1_input(&ctx, (guint8 *) B, 32);
     sha1_digest(&ctx, data.as8);
-    
+
     u = data.as32[0];
     u = MSB4(u); // needed? yes
     return u;

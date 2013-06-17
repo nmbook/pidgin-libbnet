@@ -78,7 +78,7 @@
             ((uint64_t)(x) & 0xff000000000000ULL) >> 40 |              \
             ((uint64_t)(x) & 0xff00000000000000ULL) >> 56)
 
-#if BIGENDIAN
+#if defined(BIGENDIAN) && BIGENDIAN
 #define LSB2(num) SWAP2(num)
 #define LSB4(num) SWAP4(num)
 #define MSB2(num) (num)

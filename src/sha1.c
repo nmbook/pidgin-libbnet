@@ -359,15 +359,15 @@ static void sha1_pad_message(sha1_context *ctx){
 
 guint32 sha1_checksum(guint8 *data, guint32 length, sha1_type version) {
     union {
-	guint8 as8[SHA1_HASH_SIZE];
-	guint32 as32[5];
+        guint8 as8[SHA1_HASH_SIZE];
+        guint32 as32[5];
     } digest;
     sha1_context ctx;
     ctx.version = version;
     sha1_reset(&ctx);
     sha1_input(&ctx, data, length);
     sha1_digest(&ctx, digest.as8);
-  
+
     return digest.as32[0] ^ digest.as32[1] ^ digest.as32[2] ^ digest.as32[3] ^ digest.as32[4];
 }
 #endif

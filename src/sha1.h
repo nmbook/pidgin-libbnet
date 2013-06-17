@@ -45,15 +45,14 @@
 #define _SHA1_H_
 
 #include <glib.h>
-//#include Mstdint.h"
 
 #ifndef _SHA_enum_
 #define _SHA_enum_
 typedef enum {
-    SHA1_RESULT_SUCCESS = 0,
-    SHA1_RESULT_NULL,            /* Null pointer parameter */
-    SHA1_RESULT_INPUT_TOO_LONG,    /* input data too long */
-    SHA1_RESULT_STATE_ERROR       /* called Input after Result */
+    SHA1_RESULT_SUCCESS = 0,    /* Successful                   */
+    SHA1_RESULT_NULL,           /* Null pointer parameter       */
+    SHA1_RESULT_INPUT_TOO_LONG, /* input data too long          */
+    SHA1_RESULT_STATE_ERROR     /* called Input after Result    */
 } sha1_result;
 #endif
 
@@ -70,14 +69,14 @@ typedef enum {
  *  hashing operation
  */
 typedef struct {
-    guint32 intermediate_hash[SHA1_HASH_SIZE / 4]; /* Message Digest                   */
-    guint32 length_low;                            /* Message length in bits           */
-    guint32 length_high;                           /* Message length in bits           */
-    gint16 message_block_index;                   /* Index into message block array   */
-    guint8 message_block[64];                     /* 512-bit message blocks           */
-    guint8 computed;                              /* Is the digest computed?          */
-    guint8 corrupted;                             /* Is the message digest corrupted? */
-    sha1_type version;                               /* What version of SHA1 is this?    */
+    guint32 intermediate_hash[5];   /* Message Digest                   */
+    guint32 length_low;             /* Message length in bits           */
+    guint32 length_high;            /* Message length in bits           */
+    gint16 message_block_index;     /* Index into message block array   */
+    guint8 message_block[64];       /* 512-bit message blocks           */
+    guint8 computed;                /* Is the digest computed?          */
+    guint8 corrupted;               /* Is the message digest corrupted? */
+    sha1_type version;              /* What "version" of SHA1 is this?  */
 } sha1_context;
 
 /* Function Prototypes */

@@ -51,7 +51,7 @@
 #define BNET_PACKET_BNLS 3
 
 typedef struct {
-    guint8 *data;
+    gchar *data;
     guint16 len;
     guint16 pos;
     gboolean allocd;
@@ -59,8 +59,8 @@ typedef struct {
 
 void bnet_packet_free(BnetPacket *bnet_packet);
 gboolean bnet_packet_insert(BnetPacket *bnet_packet, gconstpointer data, const gsize length);
-BnetPacket *bnet_packet_refer(const guint8 *start, const gsize length);
-BnetPacket *bnet_packet_refer_bnls(const guint8 *start, const gsize length);
+BnetPacket *bnet_packet_refer(const gchar *start, const gsize length);
+BnetPacket *bnet_packet_refer_bnls(const gchar *start, const gsize length);
 void *bnet_packet_read(BnetPacket *bnet_packet, const gsize size);
 char *bnet_packet_read_cstring(BnetPacket *bnet_packet);
 guint64 bnet_packet_read_qword(BnetPacket *bnet_packet);

@@ -64,11 +64,16 @@ struct _BnetClanInfo {
 gchar *
 bnet_clan_tag_to_string(const BnetClanTag tag)
 {
+    union {
+        gchar as_str[4];
+        BnetClanTag as_int;
+    } data;
+    data.as_int = tag;
     gchar *ret = g_malloc0(5);
-    ret[0] = *(((gchar *)&tag) + 3);
-    ret[1] = *(((gchar *)&tag) + 2);
-    ret[2] = *(((gchar *)&tag) + 1);
-    ret[3] = *(((gchar *)&tag) + 0);
+    ret[0] = data.as_str[3];
+    ret[1] = data.as_str[2];
+    ret[2] = data.as_str[1];
+    ret[3] = data.as_str[0];
     ret[4] = '\0';
     return ret;
 }
@@ -76,15 +81,13 @@ bnet_clan_tag_to_string(const BnetClanTag tag)
 BnetClanTag
 bnet_clan_string_to_tag(const gchar *tag_string)
 {
-    gchar tag_string_buf[5];
-    int i;
-    int len;
-    BnetClanTag *tag_pointer;
-    for (i = 0; i < 5; i++) tag_string_buf[i] = '\0';
-    len = strlen(tag_string);
-    g_memmove(tag_string_buf, tag_string, MIN(len, 4));
-    tag_pointer = (BnetClanTag *)tag_string_buf;
-    return *tag_pointer;
+    union {
+        gchar as_str[5];
+        BnetClanTag as_int;
+    } data;
+    data.as_int = (BnetClanTag)0;
+    g_memmove(data.as_str, tag_string, MIN(strlen(tag_string), 4));
+    return data.as_int;
 }
 
 gboolean
