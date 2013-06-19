@@ -23,7 +23,8 @@
 
 #include "bufferer.h"
 
-void bnet_packet_free(BnetPacket *bnet_packet)
+void
+bnet_packet_free(BnetPacket *bnet_packet)
 {
     if (bnet_packet->allocd) {
         if (bnet_packet->data != NULL) {
@@ -33,7 +34,8 @@ void bnet_packet_free(BnetPacket *bnet_packet)
     g_free(bnet_packet);
 }
 
-gboolean bnet_packet_insert(BnetPacket *bnet_packet, gconstpointer data, const gsize length)
+gboolean
+bnet_packet_insert(BnetPacket *bnet_packet, gconstpointer data, const gsize length)
 {
     if (bnet_packet->allocd == FALSE) return FALSE;
     
@@ -51,7 +53,8 @@ gboolean bnet_packet_insert(BnetPacket *bnet_packet, gconstpointer data, const g
     return TRUE;
 }
 
-BnetPacket *bnet_packet_refer(const gchar *start, const gsize length)
+BnetPacket *
+bnet_packet_refer(const gchar *start, const gsize length)
 {
     BnetPacket *bnet_packet = g_new0(BnetPacket, 1);
     bnet_packet->pos = 4;
@@ -62,7 +65,8 @@ BnetPacket *bnet_packet_refer(const gchar *start, const gsize length)
     return bnet_packet;
 }
 
-BnetPacket *bnet_packet_refer_bnls(const gchar *start, const gsize length)
+BnetPacket *
+bnet_packet_refer_bnls(const gchar *start, const gsize length)
 {
     BnetPacket *bnet_packet = g_new0(BnetPacket, 1);
     bnet_packet->pos = 3;
@@ -73,7 +77,8 @@ BnetPacket *bnet_packet_refer_bnls(const gchar *start, const gsize length)
     return bnet_packet;
 }
 
-void *bnet_packet_read(BnetPacket *bnet_packet, const gsize size)
+void *
+bnet_packet_read(BnetPacket *bnet_packet, const gsize size)
 {
     void *ret;
     
@@ -87,7 +92,8 @@ void *bnet_packet_read(BnetPacket *bnet_packet, const gsize size)
     return ret;
 }
 
-char *bnet_packet_read_cstring(BnetPacket *bnet_packet)
+char *
+bnet_packet_read_cstring(BnetPacket *bnet_packet)
 {
     gsize size = 0;
     char *ret;
@@ -121,7 +127,8 @@ char *bnet_packet_read_cstring(BnetPacket *bnet_packet)
     return ret;
 }
 
-guint64 bnet_packet_read_qword(BnetPacket *bnet_packet)
+guint64
+bnet_packet_read_qword(BnetPacket *bnet_packet)
 {
     void *ret = bnet_packet_read(bnet_packet, BNET_SIZE_FILETIME);
     guint64 i = *((guint64 *)ret);
@@ -129,7 +136,8 @@ guint64 bnet_packet_read_qword(BnetPacket *bnet_packet)
     return i;
 }
 
-guint32 bnet_packet_read_dword(BnetPacket *bnet_packet)
+guint32
+bnet_packet_read_dword(BnetPacket *bnet_packet)
 {
     void *ret = bnet_packet_read(bnet_packet, BNET_SIZE_DWORD);
     guint32 i = *((guint32 *)ret);
@@ -137,7 +145,8 @@ guint32 bnet_packet_read_dword(BnetPacket *bnet_packet)
     return i;
 }
 
-guint16 bnet_packet_read_word(BnetPacket *bnet_packet)
+guint16
+bnet_packet_read_word(BnetPacket *bnet_packet)
 {
     void *ret = bnet_packet_read(bnet_packet, BNET_SIZE_WORD);
     guint16 i = *((guint16 *)ret);
@@ -145,7 +154,8 @@ guint16 bnet_packet_read_word(BnetPacket *bnet_packet)
     return i;
 }
 
-guint8 bnet_packet_read_byte(BnetPacket *bnet_packet)
+guint8
+bnet_packet_read_byte(BnetPacket *bnet_packet)
 {
     void *ret = bnet_packet_read(bnet_packet, BNET_SIZE_BYTE);
     guint8 i = *((guint8 *)ret);
@@ -153,7 +163,8 @@ guint8 bnet_packet_read_byte(BnetPacket *bnet_packet)
     return i;
 }
 
-BnetPacket *bnet_packet_create(const gsize header_length)
+BnetPacket *
+bnet_packet_create(const gsize header_length)
 {
     int zero = 0;
     
@@ -174,7 +185,8 @@ BnetPacket *bnet_packet_create(const gsize header_length)
     return bnet_packet;
 }
 
-int bnet_packet_send(BnetPacket *bnet_packet, const guint8 id, const int fd)
+int
+bnet_packet_send(BnetPacket *bnet_packet, const guint8 id, const int fd)
 {
     int ret;
     
@@ -192,7 +204,8 @@ int bnet_packet_send(BnetPacket *bnet_packet, const guint8 id, const int fd)
     return ret;
 }
 
-int bnet_packet_send_bnls(BnetPacket *bnet_packet, const guint8 id, const int fd)
+int
+bnet_packet_send_bnls(BnetPacket *bnet_packet, const guint8 id, const int fd)
 {
     int ret;
     
@@ -213,7 +226,8 @@ int bnet_packet_send_bnls(BnetPacket *bnet_packet, const guint8 id, const int fd
 #define ASCII_OFFSET 51
 #define NUM_CHARS    16
 
-char *bnet_packet_debug(const BnetPacket *bnet_packet)
+char *
+bnet_packet_debug(const BnetPacket *bnet_packet)
 {
     guint pos = 0;
     guint8 c = 0;
@@ -273,7 +287,8 @@ char *bnet_packet_debug(const BnetPacket *bnet_packet)
  *
  ************************************************************************/
 
-void clear_line(char *line, int size)
+void
+clear_line(char *line, int size)
    {
    int count;
 
@@ -286,7 +301,8 @@ void clear_line(char *line, int size)
  * 	of the next character.
  *
  ************************************************************************/
-char * ascii_char(char *position, int c)
+char *
+ascii_char(char *position, int c)
    {
 					/* If the character is NOT printable
 					 * replace it with a '.'	*/
@@ -306,7 +322,8 @@ char * ascii_char(char *position, int c)
  *	return the location of the next  hex character.
  *
  ************************************************************************/
-char * hex_char(char *position, int c)
+char *
+hex_char(char *position, int c)
    {
    int offset=3;
 				/* Format and place the character into 

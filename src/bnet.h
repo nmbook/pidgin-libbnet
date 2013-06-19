@@ -32,6 +32,9 @@
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 // libpurple includes
 #ifdef _WIN32 // Win/Mingw doesn't compile without this
@@ -544,6 +547,9 @@ typedef struct {
     guint ka_handle;
     // welcome messages, stored for later
     //GList *welcome_msgs;
+    // number of news messages
+    guint32 news_count;
+    // news messages
     GList *news;
     
     // roomlist data:

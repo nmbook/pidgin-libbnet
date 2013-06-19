@@ -430,6 +430,10 @@ bnet_bnls_read_input(BnetConnectionData *bnet, int len)
         inbuftouse += header->len;
         if (inbuftouse <= bnet->sbnls.inbufused) {
             bnet_bnls_parse_packet(bnet, header->id, this_start, header->len);
+            if (bnet->sbnls.fd == 0) {
+                /* the packet parser closed the connection! -- frees everything */
+                return;
+            }
             this_start += header->len;
         } else break;
     }
@@ -1527,6 +1531,8 @@ bnet_enter_chat(BnetConnectionData *bnet)
         bnet_send_GETCHANNELLIST(bnet);
         bnet->sent_enter_channel = TRUE;
         bnet_enter_channel(bnet);
+        // reset news count
+        bnet->news_count = 0;
         bnet_send_NEWS_INFO(bnet);
     }
 }
@@ -1657,6 +1663,10 @@ bnet_read_telnet_input(BnetConnectionData *bnet, int len)
             this_len = this_end - this_start;
             *this_end = '\0';
             bnet_parse_telnet_line(bnet, this_start);
+            if (bnet->sbnet.fd == 0) {
+                /* the packet parser closed the connection! -- frees everything */
+                return;
+            }
             this_start += this_len + 2;
             this_len = len - this_len - 2;
         } else break;
@@ -1698,6 +1708,10 @@ bnet_read_input(BnetConnectionData *bnet, int len)
         g_assert(header->len != BNET_IDENT_FLAG);
         if (inbuftouse <= bnet->sbnet.inbufused) {
             bnet_parse_packet(bnet, header->id, this_start, header->len);
+            if (bnet->sbnet.fd == 0) {
+                /* the packet parser closed the connection! -- frees everything */
+                return;
+            }
             this_start += header->len;
         } else break;
     }
@@ -1820,6 +1834,8 @@ bnet_recv_ENTERCHAT(BnetConnectionData *bnet, BnetPacket *pkt)
     bnet->unique_username = unique_username;
 
     if (bnet_is_d2(bnet) || bnet_is_w3(bnet)) {
+        // reset news count
+        bnet->news_count = 0;
         bnet_send_NEWS_INFO(bnet);
     }
 }
@@ -3137,24 +3153,23 @@ bnet_recv_NEWS_INFO(BnetConnectionData *bnet, BnetPacket *pkt)
     /*guint32 oldest = */bnet_packet_read_dword(pkt);
     /*guint32 newest = */bnet_packet_read_dword(pkt);
 
-    purple_debug_info("bnet", "News items: %d\n", number_of_entries);
-
     for (i = 0; i < number_of_entries; i++) {
         BnetNewsItem *item = g_new0(BnetNewsItem, 1);
 
         guint32 timestamp = bnet_packet_read_dword(pkt);
         gchar *message = bnet_packet_read_cstring(pkt);
 
-        purple_debug_info("bnet", "NEWS (time %d): %s\n", timestamp, message);
-
         item->timestamp = timestamp;
         item->message = message;
 
         bnet->news = g_list_append(bnet->news, item);
+        bnet->news_count++;
 
         if (item->timestamp == 0 && !bnet->sent_enter_channel) {
             bnet->sent_enter_channel = TRUE;
             bnet_enter_channel(bnet);
+
+            purple_debug_info("bnet", "News items: %d\n", bnet->news_count);
         }
     }
 }
@@ -3175,26 +3190,32 @@ bnet_recv_AUTH_INFO(BnetConnectionData *bnet, BnetPacket *pkt)
     bnet->server_cookie = server_cookie;
     bnet->udp_cookie = udp_cookie;
 
-    /*if (bnet_is_w3(bnet)) {
-      gchar *signature;
-      struct sockaddr sa;
-      struct sockaddr *psa = &sa;
-      socklen_t sa_len = sizeof(sa);
+    if (bnet_is_w3(bnet)) {
+        gchar *signature;
+        union {
+            struct sockaddr_in as_in;
+            struct sockaddr as_generic;
+        } sa;
+        socklen_t sa_len = sizeof(sa);
 
-      signature = (gchar *)bnet_packet_read(pkt, 128);
-      if (getsockname(bnet->sbnet.fd, psa, &sa_len) == 0) {
-      guint64 addr = ((struct sockaddr_in *)psa)->sin_addr.s_addr;
-      if (srp_check_signature(addr, signature) == FALSE) {
-      purple_debug_warning("bnet", "WarCraft III: Server sent an incorrect server signature for the current Battle.net server IP!\n");
-      } else {
-      purple_debug_info("bnet", "WarCraft III: Validated Battle.net server signature.\n");
-      }
-      } else {
-      purple_debug_warning("bnet", "WarCraft III: Unable to verify server signature for the current Battle.net server IP!\n");
-      }
+        purple_debug_info("bnet", "Server IP: %s\n", inet_ntoa(addr));
+        signature = (gchar *)bnet_packet_read(pkt, 128);
+        if (signature == NULL) {
+            purple_debug_warning("bnet", "WarCraft III: No server signature for the current Battle.net server IP provided.\n");
+        } else if (getpeername(bnet->sbnet.fd, &sa.as_generic, &sa_len) == 0) {
+            struct in_addr addr = sa.as_in.sin_addr;
+            if (srp_check_signature(addr.s_addr, signature) == FALSE) {
+                purple_debug_warning("bnet", "WarCraft III: Server sent an incorrect server signature for the current Battle.net server IP.\n");
+            } else {
+                purple_debug_info("bnet", "WarCraft III: Validated Battle.net server signature. This is an official Battle.net server.\n");
+            }
+            g_free(signature);
+        } else {
+            purple_debug_warning("bnet", "WarCraft III: Unable to verify server signature for the current Battle.net server IP.\n");
+            g_free(signature);
+        }
 
-      g_free(signature);
-      }*/
+    }
 
     bnet_bnls_send_VERSIONCHECKEX2(bnet,
             logon_system, server_cookie, udp_cookie, mpq_ft, mpq_fn, checksum_formula);
