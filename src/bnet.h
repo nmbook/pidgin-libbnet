@@ -101,6 +101,7 @@ typedef enum {
     BNET_SID_AUTH_ACCOUNTLOGONPROOF  = 0x54,
     BNET_SID_AUTH_ACCOUNTCHANGE      = 0x55,
     BNET_SID_AUTH_ACCOUNTCHANGEPROOF = 0x56,
+    BNET_SID_SETEMAIL                = 0x59,
     BNET_SID_FRIENDSLIST             = 0x65,
     BNET_SID_FRIENDSUPDATE           = 0x66,
     BNET_SID_FRIENDSADD              = 0x67,
@@ -397,7 +398,8 @@ typedef struct {
     BnetFriendStatus automated_lookup;
     // from /whois (if available)
     // when a whois returns "away" or "dnd" message
-    char *stored_status;
+    gchar *dnd_stored_status;
+    gchar *away_stored_status;
     
     // prpl buddy object
     PurpleBuddy *buddy;
@@ -551,6 +553,8 @@ typedef struct {
     guint32 news_count;
     // news messages
     GList *news;
+    // email fields for dialog
+    PurpleRequestFields *set_email_fields;
     
     // roomlist data:
     // a GList<char *> - a copy of the roomlist
@@ -864,6 +868,7 @@ static int  bnet_send_AUTH_CHECK(const BnetConnectionData *bnet,
 static int  bnet_send_AUTH_ACCOUNTCREATE(const BnetConnectionData *bnet, char *salt_and_v);
 static int  bnet_send_AUTH_ACCOUNTLOGON(const BnetConnectionData *bnet, char *A);
 static int  bnet_send_AUTH_ACCOUNTLOGONPROOF(const BnetConnectionData *bnet, char *M1);
+static int  bnet_send_SETEMAIL(const BnetConnectionData *bnet, const char *email);
 static int  bnet_send_FRIENDSLIST(const BnetConnectionData *bnet);
 static int  bnet_send_CLANCREATIONINVITATION(const BnetConnectionData *bnet, const int cookie,
             const BnetClanTag clan_tag, const gchar *inviter_name, gboolean accept);
@@ -893,6 +898,7 @@ static void bnet_recv_AUTH_CHECK(BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_recv_AUTH_ACCOUNTCREATE(BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_recv_AUTH_ACCOUNTLOGON(BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_recv_AUTH_ACCOUNTLOGONPROOF(BnetConnectionData *bnet, BnetPacket *pkt);
+static void bnet_recv_SETEMAIL(BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_recv_LOGONRESPONSE2(BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_recv_CREATEACCOUNT2(BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_recv_FRIENDSLIST(BnetConnectionData *bnet, BnetPacket *pkt);
@@ -957,6 +963,8 @@ static void bnet_enter_channel(const BnetConnectionData *bnet);
 static void bnet_enter_chat(BnetConnectionData *bnet);
 static void bnet_entered_chat(BnetConnectionData *bnet);
 static gboolean bnet_keepalive_timer(BnetConnectionData *bnet);
+static void bnet_request_set_email_cb(gpointer data);
+static void bnet_request_set_email(BnetConnectionData *bnet);
 static void bnet_clan_invite_accept_cb(void *data, int act_index);
 static void bnet_clan_invite_decline_cb(void *data, int act_index);
 static gint bnet_channel_user_compare(gconstpointer a, gconstpointer b);
@@ -970,6 +978,7 @@ static char *bnet_format_strsec(char *secs_str);
 static char *bnet_locale_to_utf8(const char *input);
 static char *bnet_locale_from_utf8(const char *input);
 static gchar *bnet_escape_text(const gchar *text, int length, gboolean replace_linebreaks);
+static void bnet_find_detached_buddies(BnetConnectionData *bnet);
 static void bnet_friend_update(const BnetConnectionData *bnet, int index,
             BnetFriendInfo *bfi, BnetFriendStatus status,
             BnetFriendLocation location, BnetProductID product_id,

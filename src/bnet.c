@@ -23,22 +23,6 @@
 
 #include "bnet.h"
 
-// DEBUG: print the current F L
-// TODO: remove
-static void
-bnet_print_f_l(BnetConnectionData *bnet)
-{
-    GList *el = bnet->friends_list;
-    int i = 0;
-    while (el != NULL) {
-        BnetFriendInfo *bfi = el->data;
-
-        i++;
-        purple_debug_info("bnet", "%d: %s status: %d\n", i, bfi->account, bfi->status);
-        el = g_list_next(el);
-    }
-}
-
 static void
 bnet_input_free(struct SocketData *s)
 {
@@ -73,8 +57,10 @@ bnet_friend_info_free(BnetFriendInfo *bfi)
             g_free(bfi->account);
         if (bfi->location_name != NULL)
             g_free(bfi->location_name);
-        if (bfi->stored_status != NULL)
-            g_free(bfi->stored_status);
+        if (bfi->away_stored_status != NULL)
+            g_free(bfi->away_stored_status);
+        if (bfi->dnd_stored_status != NULL)
+            g_free(bfi->dnd_stored_status);
         g_free(bfi);
     }
 }
@@ -1387,6 +1373,20 @@ bnet_send_AUTH_ACCOUNTLOGONPROOF(const BnetConnectionData *bnet, char *M1)
 }
 
 static int
+bnet_send_SETEMAIL(const BnetConnectionData *bnet, const char *email)
+{
+    BnetPacket *pkt = NULL;
+    int ret = -1;
+
+    pkt = bnet_packet_create(BNET_PACKET_BNCS);
+    bnet_packet_insert(pkt, email, strlen(email) + 1);
+
+    ret = bnet_packet_send(pkt, BNET_SID_SETEMAIL, bnet->sbnet.fd);
+
+    return ret;
+}
+
+static int
 bnet_send_FRIENDSLIST(const BnetConnectionData *bnet)
 {
     BnetPacket *pkt = NULL;
@@ -2345,7 +2345,7 @@ bnet_recv_event_INFO(BnetConnectionData *bnet, PurpleConvChat *chat,
                 BnetUser *bfi = purple_buddy_get_protocol_data(b);
                 if (bfi != NULL) {
                     if (bfi->type == BNET_USER_TYPE_FRIEND) {
-                        ((BnetFriendInfo *)bfi)->stored_status = g_strdup(away_msg);
+                        ((BnetFriendInfo *)bfi)->away_stored_status = g_strdup(away_msg);
                         if (((BnetFriendInfo *)bfi)->automated_lookup & BNET_FRIEND_STATUS_AWAY) {
                             handled = TRUE;
                             ((BnetFriendInfo *)bfi)->automated_lookup &= ~BNET_FRIEND_STATUS_AWAY;
@@ -2427,7 +2427,7 @@ bnet_recv_event_INFO(BnetConnectionData *bnet, PurpleConvChat *chat,
                 BnetUser *bfi = purple_buddy_get_protocol_data(b);
                 if (bfi != NULL) {
                     if (bfi->type == BNET_USER_TYPE_FRIEND) {
-                        ((BnetFriendInfo *)bfi)->stored_status = g_strdup(dnd_msg);
+                        ((BnetFriendInfo *)bfi)->dnd_stored_status = g_strdup(dnd_msg);
                         if (((BnetFriendInfo *)bfi)->automated_lookup & BNET_FRIEND_STATUS_DND) {
                             handled = TRUE;
                             ((BnetFriendInfo *)bfi)->automated_lookup &= ~BNET_FRIEND_STATUS_DND;
@@ -3198,12 +3198,12 @@ bnet_recv_AUTH_INFO(BnetConnectionData *bnet, BnetPacket *pkt)
         } sa;
         socklen_t sa_len = sizeof(sa);
 
-        purple_debug_info("bnet", "Server IP: %s\n", inet_ntoa(addr));
         signature = (gchar *)bnet_packet_read(pkt, 128);
         if (signature == NULL) {
             purple_debug_warning("bnet", "WarCraft III: No server signature for the current Battle.net server IP provided.\n");
         } else if (getpeername(bnet->sbnet.fd, &sa.as_generic, &sa_len) == 0) {
             struct in_addr addr = sa.as_in.sin_addr;
+            purple_debug_info("bnet", "Server IP: %s\n", inet_ntoa(addr));
             if (srp_check_signature(addr.s_addr, signature) == FALSE) {
                 purple_debug_warning("bnet", "WarCraft III: Server sent an incorrect server signature for the current Battle.net server IP.\n");
             } else {
@@ -3461,6 +3461,7 @@ bnet_recv_AUTH_ACCOUNTLOGONPROOF(BnetConnectionData *bnet, BnetPacket *pkt)
                 break;
             }
         case BNET_AUTH_ACCOUNT_REQEMAIL:
+            bnet_request_set_email(bnet);
             purple_debug_info("bnet", "Logged in!\n");
             purple_connection_update_progress(gc, "Entering chat", BNET_STEP_FINAL, BNET_STEP_COUNT);
             bnet_enter_chat(bnet);
@@ -3471,6 +3472,12 @@ bnet_recv_AUTH_ACCOUNTLOGONPROOF(BnetConnectionData *bnet, BnetPacket *pkt)
                     "Account logon failure");
             break;
     }
+}
+
+static void
+bnet_recv_SETEMAIL(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+    bnet_request_set_email(bnet);
 }
 
 static void
@@ -3648,7 +3655,7 @@ bnet_recv_FRIENDSLIST(BnetConnectionData *bnet, BnetPacket *pkt)
         el = g_list_next(el);
     }
 
-    bnet_print_f_l(bnet);
+    bnet_find_detached_buddies(bnet);
 }
 
 static void
@@ -3692,7 +3699,6 @@ bnet_recv_FRIENDSADD(BnetConnectionData *bnet, BnetPacket *pkt)
     bnet_friend_update(bnet, index, bfi, status, location, product_id, location_name);
 
     g_free(location_name);
-    bnet_print_f_l(bnet);
 
     //g_free(bfi);
 }
@@ -3721,8 +3727,6 @@ bnet_recv_FRIENDSREMOVE(BnetConnectionData *bnet, BnetPacket *pkt)
         // remove
         purple_blist_remove_buddy(buddy);
     }
-
-    bnet_print_f_l(bnet);
 }
 
 static void
@@ -3734,8 +3738,6 @@ bnet_recv_FRIENDSPOSITION(BnetConnectionData *bnet, BnetPacket *pkt)
 
     bnet->friends_list = g_list_remove_link(bnet->friends_list, bfi_link);
     bnet->friends_list = g_list_insert(bnet->friends_list, bfi_link->data, new_index);
-
-    bnet_print_f_l(bnet);
 }
 
 static void
@@ -4201,6 +4203,9 @@ bnet_parse_packet(BnetConnectionData *bnet, const guint8 packet_id, const gchar 
         case BNET_SID_AUTH_ACCOUNTLOGONPROOF:
             bnet_recv_AUTH_ACCOUNTLOGONPROOF(bnet, pkt);
             break;
+        case BNET_SID_SETEMAIL:
+            bnet_recv_SETEMAIL(bnet, pkt);
+            break;
         case BNET_SID_LOGONRESPONSE2:
             bnet_recv_LOGONRESPONSE2(bnet, pkt);
             break;
@@ -4277,6 +4282,76 @@ bnet_parse_packet(BnetConnectionData *bnet, const guint8 packet_id, const gchar 
     }
 
     bnet_packet_free(pkt);
+}
+
+static void
+bnet_request_set_email_cb(gpointer data)
+{
+    BnetConnectionData *bnet;
+    PurpleRequestFields *fields;
+    GList *group_list; PurpleRequestFieldGroup *group;
+    GList *field_list; PurpleRequestField *field;
+    const char *email;
+    const char *email2;
+
+    bnet = data;
+    if (bnet == NULL) return;
+    fields = bnet->set_email_fields;
+    if (fields == NULL) return;
+    group_list = g_list_first(purple_request_fields_get_groups(fields));
+    if (group_list == NULL) return;
+    group = group_list->data; // only one group
+    if (group == NULL) return;
+    field_list = g_list_first(purple_request_field_group_get_fields(group));
+    if (field_list == NULL) return;
+    field = field_list->data;
+    email = purple_request_field_string_get_value(field);
+    if (email == NULL) return;
+    field_list = g_list_next(field_list);
+    if (field_list == NULL) return;
+    field = field_list->data;
+    email2 = purple_request_field_string_get_value(field);
+    if (email2 == NULL) return;
+    if (strcmp(email, email2) == 0 && strlen(email) > 0) {
+        bnet_send_SETEMAIL(bnet, email);
+    }
+}
+
+static void
+bnet_request_set_email(BnetConnectionData *bnet)
+{
+    gchar *group_text = g_strdup_printf("Bind an e-mail address to %s on %s", bnet->username, bnet->server);
+    PurpleRequestField *field;
+    PurpleRequestFields *fields = purple_request_fields_new();
+    PurpleRequestFieldGroup *group = purple_request_field_group_new("If you wish to bind an e-mail address, do so here.");
+
+    field = purple_request_field_string_new("email", "e-mail address", "", FALSE);
+    purple_request_field_group_add_field(group, field);
+    purple_request_field_string_set_editable(field, TRUE);
+    purple_request_field_set_required(field, FALSE);
+
+    field = purple_request_field_string_new("email2", "Retype e-mail address", "", FALSE);
+    purple_request_field_group_add_field(group, field);
+    purple_request_field_string_set_editable(field, TRUE);
+    purple_request_field_set_required(field, FALSE);
+
+    purple_request_fields_add_group(fields, group);
+
+    bnet->set_email_fields = fields;
+
+    purple_debug_warning("bnet", "Battle.net wants to register an email address with this account.\n");
+    purple_request_fields(bnet->account->gc, "Bind an e-mail address",
+            group_text,
+            "This address can be used later to recover your account when telling Battle.net to reset your password.\n "
+            "When telling them to reset your password, you must use this e-mail address again.\n "
+            "You may safely ignore this request. ",
+            fields,
+            "_Register", (GCallback)bnet_request_set_email_cb,
+            "_Ignore", NULL,
+            bnet->account,
+            NULL, NULL,
+            bnet);
+    g_free(group_text);
 }
 
 static void
@@ -4593,6 +4668,28 @@ bnet_format_strsec(char *secs_str)
     else days_str = " days, ";
 
     return g_strdup_printf("%d%s%02d:%02d:%02d", days, days_str, hrs, mins, secs);
+}
+
+static void
+bnet_find_detached_buddies(BnetConnectionData *bnet)
+{
+    GSList *all_buddies;
+    GSList *el;
+    PurpleBuddy *buddy;
+    BnetFriendInfo *bfi;
+
+    all_buddies = purple_find_buddies(bnet->account, NULL);
+    el = all_buddies;
+    while (el != NULL) {
+        buddy = el->data;
+        bfi = purple_buddy_get_protocol_data(buddy);
+        if (bfi == NULL) {
+            purple_prpl_got_user_status(bnet->account, purple_buddy_get_name(buddy),
+                    BNET_STATUS_OFFLINE, NULL);
+        }
+        el = g_slist_next(el);
+    }
+    g_slist_free(all_buddies);
 }
 
 static void
@@ -5097,6 +5194,7 @@ bnet_action_set_motd(PurplePluginAction *action)
     PurpleRequestFieldGroup *group = NULL;
     BnetClanMemberRank my_rank = 0;
     BnetClanTag tag = 0;
+    gchar *group_name = NULL;
     gchar *tag_string = NULL;
     gchar *current_motd = NULL;
 
@@ -5114,8 +5212,8 @@ bnet_action_set_motd(PurplePluginAction *action)
     current_motd = bnet_clan_info_get_motd(bnet->clan_info);
 
     fields = purple_request_fields_new();
-    group = purple_request_field_group_new(
-            g_strdup_printf("Set clan MOTD for Clan %s", tag_string));
+    group_name = g_strdup_printf("Set clan MOTD for Clan %s", tag_string);
+    group = purple_request_field_group_new(group_name);
 
     field = purple_request_field_string_new("motd", "Message of the Day", current_motd, FALSE);
     purple_request_field_string_set_editable(field, TRUE);
@@ -5132,6 +5230,7 @@ bnet_action_set_motd(PurplePluginAction *action)
             bnet->account, NULL, NULL, bnet);
 
     g_free(tag_string);
+    g_free(group_name);
 }
 
 static void
@@ -5171,8 +5270,8 @@ bnet_profile_show_write_dialog(BnetConnectionData *bnet,
 {
     PurpleRequestField *field;
     PurpleRequestFields *fields = purple_request_fields_new();
-    PurpleRequestFieldGroup *group = purple_request_field_group_new(
-            g_strdup_printf("Change profile information for %s", bnet->username));
+    gchar *group_name = g_strdup_printf("Change profile information for %s", bnet->username);
+    PurpleRequestFieldGroup *group = purple_request_field_group_new(group_name);
 
     field = purple_request_field_string_new("profile\\sex", "Sex", psex, FALSE);
     purple_request_field_group_add_field(group, field);
@@ -5204,9 +5303,15 @@ bnet_profile_show_write_dialog(BnetConnectionData *bnet,
 
     bnet->writing_profile = FALSE;
 
-    purple_request_fields(bnet->account->gc, "Edit Profile", NULL, NULL, fields,
-            "Save", (GCallback)bnet_profile_write_cb, "Cancel", NULL,
-            bnet->account, bnet->username, NULL, bnet);
+    purple_request_fields(bnet->account->gc,
+            "Edit Profile",
+            NULL, NULL,
+            fields,
+            "_Save", (GCallback)bnet_profile_write_cb,
+            "_Cancel", NULL,
+            bnet->account,
+            NULL, NULL,
+            bnet);
 }
 
 static void
@@ -5858,9 +5963,11 @@ bnet_status_text(PurpleBuddy *b)
 {
     BnetUser *bfi = purple_buddy_get_protocol_data(b);
     if (bfi == NULL) {
-        return NULL;
-    } else if (bfi->type == BNET_USER_TYPE_FRIEND && ((BnetFriendInfo *)bfi)->stored_status != NULL) {
-        return ((BnetFriendInfo *)bfi)->stored_status;
+        return "Not on Battle.net's friend list.";
+    } else if (bfi->type == BNET_USER_TYPE_FRIEND && ((BnetFriendInfo *)bfi)->away_stored_status != NULL) {
+        return ((BnetFriendInfo *)bfi)->away_stored_status;
+    } else if (bfi->type == BNET_USER_TYPE_FRIEND && ((BnetFriendInfo *)bfi)->dnd_stored_status != NULL) {
+        return ((BnetFriendInfo *)bfi)->dnd_stored_status;
     } else {
         return NULL;
     }
@@ -5875,9 +5982,7 @@ bnet_tooltip_text(PurpleBuddy *buddy,
     purple_debug_info("bnet", "poll buddy tooltip %s \n", buddy->name);
     if (bfi == NULL) {
         // no information saved
-        if (full) {
-            purple_notify_user_info_add_pair_plaintext(info, "Status", "Not on Battle.net's friend list.");
-        }
+        purple_notify_user_info_add_pair_plaintext(info, "Status", "Not on Battle.net's friend list.");
     } else if (bfi->type == BNET_USER_TYPE_FRIEND && ((BnetFriendInfo *)bfi)->location != BNET_FRIEND_LOCATION_OFFLINE) {
         // add things to online friends
         gboolean is_available = TRUE;
@@ -5894,12 +5999,12 @@ bnet_tooltip_text(PurpleBuddy *buddy,
 
         if (((BnetFriendInfo *)bfi)->status & BNET_FRIEND_STATUS_DND) {
             purple_notify_user_info_add_pair_plaintext(info, "Status",
-                    g_strdup_printf("Do Not Disturb - %s", ((BnetFriendInfo *)bfi)->stored_status));
+                    g_strdup_printf("Do Not Disturb - %s", ((BnetFriendInfo *)bfi)->dnd_stored_status));
             is_available = FALSE;
         }
         if (((BnetFriendInfo *)bfi)->status & BNET_FRIEND_STATUS_AWAY) {
             purple_notify_user_info_add_pair_plaintext(info, "Status",
-                    g_strdup_printf("Away - %s", ((BnetFriendInfo *)bfi)->stored_status));
+                    g_strdup_printf("Away - %s", ((BnetFriendInfo *)bfi)->away_stored_status));
             is_available = FALSE;
         }
         if (is_available) {
