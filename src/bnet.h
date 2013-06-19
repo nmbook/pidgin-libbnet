@@ -337,15 +337,23 @@ typedef enum {
 #define BNET_USER_TYPE_CHANNELUSER  0x01
 #define BNET_USER_TYPE_FRIEND       0x02
 
+typedef enum {
+    BNET_USER_TAG_ONFRIENDLIST = 1
+} BnetUserTag;
+
 typedef struct {
     gint32 type;
     gchar *username;
+    // tag: used currently for friend list diff right now
+    BnetUserTag tag;
     gchar data[48];
 } BnetUser;
 
 typedef struct {
     guint32 type;
     char *username;
+    // tag: used currently for friend list diff right now
+    BnetUserTag tag;
     char *stats_data;
     BnetChatEventFlags flags;
     gint32 ping;
@@ -374,6 +382,8 @@ typedef struct {
     guint32 type;
     // account name from friend list
     char *account;
+    // tag: used currently for friend list diff right now
+    BnetUserTag tag;
     // information directly from friend list
     BnetFriendStatus status;
     BnetFriendLocation location;
@@ -381,13 +391,14 @@ typedef struct {
     char *location_name;
 
     // whether we are waiting for a /whois on this user
-    gboolean automated_lookup;
+    BnetFriendStatus automated_lookup;
     // from /whois (if available)
     // when a whois returns "away" or "dnd" message
     char *stored_status;
     
     // prpl buddy object
     PurpleBuddy *buddy;
+
 } BnetFriendInfo;
 
 /*

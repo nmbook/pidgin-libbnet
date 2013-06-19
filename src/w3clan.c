@@ -64,12 +64,13 @@ struct _BnetClanInfo {
 gchar *
 bnet_clan_tag_to_string(const BnetClanTag tag)
 {
+    gchar *ret;
     union {
         gchar as_str[4];
         BnetClanTag as_int;
     } data;
     data.as_int = tag;
-    gchar *ret = g_malloc0(5);
+    ret = g_malloc0(5);
     ret[0] = data.as_str[3];
     ret[1] = data.as_str[2];
     ret[2] = data.as_str[1];
@@ -128,7 +129,6 @@ bnet_clan_packet_register(BnetClanInfo *info, const guint8 packet_id, gpointer d
     key->cookie = cookie;
     
     g_hash_table_insert(((struct _BnetClanInfo *)info)->cookie_list, key, data);
-    
     return cookie;
 }
 
@@ -150,6 +150,7 @@ bnet_clan_packet_unregister(BnetClanInfo *info, const guint8 packet_id, const gu
     if (ret != NULL) {
         g_hash_table_remove(((struct _BnetClanInfo *)info)->cookie_list, key);
     }
+    g_free(key);
     return ret;
 }
 

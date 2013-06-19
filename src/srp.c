@@ -604,7 +604,7 @@ int srp_check_signature(guint32 address, const gchar *signature_raw)
     mpz_t result;
     mpz_t modulus;
     mpz_t signature;
-    gsize size, alloc_size;
+    size_t size, alloc_size;
     int cmp_result;
     
     /* build the "check" array */
