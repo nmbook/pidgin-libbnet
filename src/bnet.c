@@ -24,6 +24,19 @@
 #include "bnet.h"
 
 static void
+_g_list_free_full(GList *list, GDestroyNotify free_fn)
+{
+    GList *el = g_list_first(list);
+    while (el != NULL) {
+        if (el->data != NULL) {
+            free_fn(el->data);
+        }
+        el = g_list_next(el);
+    }
+    g_list_free(list);
+}
+
+static void
 bnet_input_free(struct SocketData *s)
 {
     purple_input_remove(s->inpa);
@@ -1493,6 +1506,7 @@ bnet_account_logon(BnetConnectionData *bnet)
         if (bnet->account_create) {
             bnet_send_CREATEACCOUNT2(bnet);
         } else {
+            bnet_account_lockout_set(bnet);
             bnet_send_LOGONRESPONSE2(bnet);
         }
     } else {
@@ -1506,6 +1520,7 @@ bnet_account_logon(BnetConnectionData *bnet)
         } else {
             gchar A[32];
             srp_get_A(bnet->account_data, A);
+            bnet_account_lockout_set(bnet);
             bnet_send_AUTH_ACCOUNTLOGON(bnet, A);
         }
     }
@@ -1577,6 +1592,32 @@ bnet_keepalive_timer(BnetConnectionData *bnet)
     }
 
     return TRUE;
+}
+
+static void
+bnet_account_lockout_set(BnetConnectionData *bnet)
+{
+    bnet->alo_handle = purple_timeout_add_seconds(10, (GSourceFunc)bnet_account_lockout_timer, bnet);
+}
+
+static void
+bnet_account_lockout_cancel(BnetConnectionData *bnet)
+{
+    if (bnet->alo_handle != 0) {
+        purple_timeout_remove(bnet->alo_handle);
+        bnet->alo_handle = 0;
+    }
+}
+
+static gboolean
+bnet_account_lockout_timer(BnetConnectionData *bnet)
+{
+    purple_connection_error_reason(bnet->account->gc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
+            "Logging on is taking too long. You are likely locked out of this account. Try again in 30 minutes.");
+
+    bnet->alo_handle = 0;
+    
+    return FALSE;
 }
 
 static void
@@ -1988,7 +2029,7 @@ bnet_recv_event_SHOWUSER(BnetConnectionData *bnet, PurpleConvChat *chat,
                 }
             }
             g_list_free(users);
-            g_list_free_full(extras, g_free);
+            _g_list_free_full(extras, g_free);
             g_list_free(flags);
         }
         g_free(name_normal);
@@ -2146,7 +2187,7 @@ bnet_recv_event_CHANNEL(BnetConnectionData *bnet, PurpleConvChat *chat,
 
     // clear the user list
     if (bnet->channel_users != NULL) {
-        g_list_free_full(bnet->channel_users, (GDestroyNotify)bnet_channel_user_free);
+        _g_list_free_full(bnet->channel_users, (GDestroyNotify)bnet_channel_user_free);
         bnet->channel_users = NULL;
     }
 
@@ -3382,6 +3423,8 @@ bnet_recv_AUTH_ACCOUNTLOGON(BnetConnectionData *bnet, BnetPacket *pkt)
     guint32 result = bnet_packet_read_dword(pkt);
 
     PurpleConnection *gc = bnet->account->gc;
+    
+    bnet_account_lockout_cancel(bnet);
 
     switch (result) {
         case BNET_SUCCESS:
@@ -3486,6 +3529,8 @@ bnet_recv_LOGONRESPONSE2(BnetConnectionData *bnet, BnetPacket *pkt)
     guint32 result = bnet_packet_read_dword(pkt);
 
     PurpleConnection *gc = bnet->account->gc;
+    
+    bnet_account_lockout_cancel(bnet);
 
     switch (result) {
         case BNET_SUCCESS:
@@ -4784,6 +4829,11 @@ bnet_close(PurpleConnection *gc)
             purple_timeout_remove(bnet->ka_handle);
             bnet->ka_handle = 0;
         }
+        if (bnet->alo_handle != 0) {
+            purple_debug_info("bnet", "free alo_handle\n");
+            purple_timeout_remove(bnet->alo_handle);
+            bnet->alo_handle = 0;
+        }
         if (bnet->sbnls.fd != 0) {
             purple_debug_info("bnet", "free sbnls struct\n");
             bnet_input_free(&bnet->sbnls);
@@ -4824,7 +4874,7 @@ bnet_close(PurpleConnection *gc)
         }
         if (bnet->channel_list != NULL) {
             purple_debug_info("bnet", "free channel_list\n");
-            g_list_free_full(bnet->channel_list, g_free);
+            _g_list_free_full(bnet->channel_list, g_free);
             bnet->channel_list = NULL;
         }
         if (bnet->channel_name != NULL) {
@@ -4834,17 +4884,17 @@ bnet_close(PurpleConnection *gc)
         }
         if (bnet->channel_users != NULL) {
             purple_debug_info("bnet", "free channel_users\n");
-            g_list_free_full(bnet->channel_users, (GDestroyNotify)bnet_channel_user_free);
+            _g_list_free_full(bnet->channel_users, (GDestroyNotify)bnet_channel_user_free);
             bnet->channel_users = NULL;
         }
         if (bnet->friends_list != NULL) {
             purple_debug_info("bnet", "free friends_list\n");
-            g_list_free_full(bnet->friends_list, (GDestroyNotify)bnet_friend_info_free);
+            _g_list_free_full(bnet->friends_list, (GDestroyNotify)bnet_friend_info_free);
             bnet->friends_list = NULL;
         }
         if (bnet->news != NULL) {
             purple_debug_info("bnet", "free news\n");
-            g_list_free_full(bnet->news, (GDestroyNotify)bnet_news_item_free);
+            _g_list_free_full(bnet->news, (GDestroyNotify)bnet_news_item_free);
             bnet->news = NULL;
         }
         if (bnet->away_msg != NULL) {
@@ -5863,7 +5913,7 @@ bnet_join_chat(PurpleConnection *gc, GHashTable *components)
                 }
                 purple_conv_chat_add_users(chat, users, extras, flags, FALSE);
                 g_list_free(users);
-                g_list_free_full(extras, g_free);
+                _g_list_free_full(extras, g_free);
                 g_list_free(flags);
             }
         }
