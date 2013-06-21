@@ -32,5 +32,6 @@ stamp-h1
 *.o
 *.lo
 *.la
+libbnet.dll
 src/.libs/
 
