@@ -32,13 +32,16 @@
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
+
+// libpurple includes
+#ifdef _WIN32
+// Win/Mingw doesn't compile without this
+#include "internal.h"
+#else
+// needed for getpeername call on non-Windows
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-
-// libpurple includes
-#ifdef _WIN32 // Win/Mingw doesn't compile without this
-#include "internal.h"
 #endif
 
 #include "account.h"
@@ -601,6 +604,8 @@ typedef struct {
     gchar *my_statstring;
     // the unique username Battle.net assigned
     gchar *unique_username;
+    // handle for account lockout checking timer
+    guint alo_handle;
     // a counter, increases every 30 seconds that is_online is true
     // used for "keep alive"-like functions
     guint32 ka_tick;
@@ -1032,6 +1037,9 @@ static void bnet_enter_channel(const BnetConnectionData *bnet);
 static void bnet_enter_chat(BnetConnectionData *bnet);
 static void bnet_entered_chat(BnetConnectionData *bnet);
 static gboolean bnet_keepalive_timer(BnetConnectionData *bnet);
+static void bnet_account_lockout_set(BnetConnectionData *bnet);
+static void bnet_account_lockout_cancel(BnetConnectionData *bnet);
+static gboolean bnet_account_lockout_timer(BnetConnectionData *bnet);
 static void bnet_request_set_email_cb(gpointer data);
 static void bnet_request_set_email(BnetConnectionData *bnet);
 static void bnet_clan_invite_accept_cb(void *data, int act_index);
