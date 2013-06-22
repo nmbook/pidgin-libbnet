@@ -1625,6 +1625,7 @@ bnet_enter_chat(BnetConnectionData *bnet)
         bnet->news_count = 0;
         bnet_send_NEWS_INFO(bnet);
     }
+    bnet_send_FRIENDSLIST(bnet);
 }
 
 static gboolean
@@ -2190,7 +2191,7 @@ bnet_recv_event_WHISPER(BnetConnectionData *bnet, PurpleConvChat *chat,
             purple_debug_warning("bnet", "regex create failed: %s\n", err->message);
             g_error_free(err);
         } else if (g_regex_match(regex, text, 0, &mi) &&
-                purple_account_get_bool(bnet->account, "hidemutual", TRUE)) {
+                !purple_account_get_bool(bnet->account, "showmutual", FALSE)) {
             prpl_level_ignore = TRUE;
         }
         g_match_info_free(mi);
@@ -2693,7 +2694,7 @@ bnet_recv_event_INFO(BnetConnectionData *bnet, PurpleConvChat *chat,
                 handled = TRUE;
                 if (!purple_conv_present_error(bnet->last_sent_to, bnet->account, text)) {
                     gchar *tmp = g_strdup_printf("%s did not receive your whisper.", bnet->last_sent_to);
-                    purple_notify_error(gc, "Do not disturb", text, tmp);
+                    purple_notify_error(gc, "Do Not Disturb", text, tmp);
                     g_free(tmp);
                 }
 
@@ -2708,18 +2709,19 @@ bnet_recv_event_INFO(BnetConnectionData *bnet, PurpleConvChat *chat,
         ////////////////////////
         // UNHANDLED EID_INFO //
         if (!handled) {
+            gchar *esc_text = bnet_escape_text(text, -1, FALSE);
             if (bnet->last_command_conv != NULL) {
                 PurpleConversation *conv = bnet->last_command_conv;
                 PurpleConvIm *im = purple_conversation_get_im_data(conv);
                 if (im) {
-                    purple_conv_im_write(im, "Battle.net", text, PURPLE_MESSAGE_SYSTEM, time(NULL));
+                    purple_conv_im_write(im, "Battle.net", esc_text, PURPLE_MESSAGE_SYSTEM, time(NULL));
                 } else if (chat) {
-                    purple_conv_chat_write(chat, "Battle.net", text, PURPLE_MESSAGE_SYSTEM, time(NULL));
+                    purple_conv_chat_write(chat, "Battle.net", esc_text, PURPLE_MESSAGE_SYSTEM, time(NULL));
                 } else {
                     purple_notify_info(gc, "Information", text, NULL);
                 }
             } else if (chat) {
-                purple_conv_chat_write(chat, "Battle.net", text, PURPLE_MESSAGE_SYSTEM, time(NULL));
+                purple_conv_chat_write(chat, "Battle.net", esc_text, PURPLE_MESSAGE_SYSTEM, time(NULL));
             } else {
                 //bnet->welcome_msgs = g_list_append(bnet->welcome_msgs, text);
             }
@@ -2776,18 +2778,19 @@ bnet_recv_event_ERROR(BnetConnectionData *bnet, PurpleConvChat *chat,
     /////////////////////////
     // UNHANDLED EID_ERROR //
     if (!handled) {
+        gchar *esc_text = bnet_escape_text(text, -1, FALSE);
         if (bnet->last_command_conv) {
             PurpleConversation *conv = bnet->last_command_conv;
             PurpleConvIm *im = purple_conversation_get_im_data(conv);
             if (im) {
-                purple_conv_im_write(im, "Battle.net", text, PURPLE_MESSAGE_ERROR, time(NULL));
+                purple_conv_im_write(im, "Battle.net", esc_text, PURPLE_MESSAGE_ERROR, time(NULL));
             } else if (chat) {
-                purple_conv_chat_write(chat, "Battle.net", text, PURPLE_MESSAGE_ERROR, time(NULL));
+                purple_conv_chat_write(chat, "Battle.net", esc_text, PURPLE_MESSAGE_ERROR, time(NULL));
             } else {
                 purple_notify_info(gc, "Error", text, NULL);
             }
         } else if (chat) {
-            purple_conv_chat_write(chat, "Battle.net", text, PURPLE_MESSAGE_ERROR, time(NULL));
+            purple_conv_chat_write(chat, "Battle.net", esc_text, PURPLE_MESSAGE_ERROR, time(NULL));
         } else {
             purple_notify_error(gc, "Error", text, NULL);
         }
@@ -2849,10 +2852,6 @@ bnet_entered_chat(BnetConnectionData *bnet)
     bnet->channel_seen_self = FALSE;
 
     bnet->ka_handle = purple_timeout_add_seconds(30, (GSourceFunc)bnet_keepalive_timer, bnet);
-    
-    if (!bnet->emulate_telnet) {
-        bnet_send_FRIENDSLIST(bnet);
-    }
 
     purple_connection_set_state(gc, PURPLE_CONNECTED);
 
@@ -4184,7 +4183,7 @@ bnet_recv_FRIENDSLIST(BnetConnectionData *bnet, BnetPacket *pkt)
                 purple_debug_info("bnet", "Friend diff: %s added\n", bfi->account);
             } else {
                 bfi = old_bfi;
-                purple_debug_info("bnet", "Friend diff: %s still on list\n", bfi->account);
+                //purple_debug_info("bnet", "Friend diff: %s still on list\n", bfi->account);
             }
             bfi->on_list = TRUE;
 
@@ -4510,25 +4509,97 @@ bnet_recv_CLANMEMBERLIST(BnetConnectionData *bnet, BnetPacket *pkt)
     guint32 cookie;
     guint8 number_of_members;
     GList *members = NULL;
+    const gchar *group_name_setting;
+    gchar *group_name;
+    PurpleGroup *group;
+    BnetClanTag clan_tag;
+    gchar *clan_tag_text;
     int i;
+    gboolean do_not_free = FALSE;
 
     cookie = bnet_packet_read_dword(pkt);
-
     bnet_clan_packet_unregister(bnet->clan_info, BNET_SID_CLANMEMBERLIST, cookie);
+
+    clan_tag = bnet_clan_info_get_tag(bnet->clan_info);
+    clan_tag_text = bnet_clan_tag_to_string(clan_tag);
 
     number_of_members = bnet_packet_read_byte(pkt);
 
     purple_debug_info("bnet", "Clan members: %d\n", number_of_members);
+    // get or create default "Buddies" group
+    group_name_setting = purple_account_get_string(bnet->account, "grpclan", BNET_DEFAULT_GROUP_CLAN);
+    group_name = g_strdup_printf(group_name_setting, clan_tag_text);
+    group = purple_group_new(group_name);
 
     for (i = 0; i < number_of_members; i++) {
         gchar *name = bnet_packet_read_cstring(pkt);
         BnetClanMemberRank rank = bnet_packet_read_byte(pkt);
         BnetClanMemberStatus status = bnet_packet_read_byte(pkt);
         gchar *location = bnet_packet_read_cstring(pkt);
+
         BnetClanMember *member = bnet_clan_member_new(name, rank, status, location);
         members = g_list_append(members, member);
     }
-    bnet_clan_info_set_members(bnet->clan_info, members);
+
+    if (purple_account_get_bool(bnet->account, "showgrpclan", FALSE)) {
+        GList *el = g_list_first(members);
+        for (i = 0; i < number_of_members; i++) {
+            BnetClanMember *member = el->data;
+            gchar *name = bnet_clan_member_get_name(member);
+            const gchar *prpl_status = NULL;
+            GSList *buddies;
+            PurpleBuddy *buddy = NULL;
+            BnetUser *current_member = NULL;
+            gboolean found_mergable;
+
+            bnet->clan_members_in_blist = TRUE;
+
+            switch (bnet_clan_member_get_status(member)) {
+                case BNET_CLAN_STATUS_OFFLINE:
+                    prpl_status = BNET_STATUS_OFFLINE;
+                    break;
+                case BNET_CLAN_STATUS_ONLINE:
+                default:
+                    prpl_status = BNET_STATUS_ONLINE;
+                    break;
+            }
+
+            buddies = purple_find_buddies(bnet->account, name);
+            found_mergable = FALSE;
+            while (buddies != NULL) {
+                buddy = buddies->data;
+                current_member = purple_buddy_get_protocol_data(buddy);
+                if (current_member != NULL && current_member->type == BNET_USER_TYPE_CLANMEMBER) {
+                    //purple_debug_info("bnet", "Clan diff: %s merged\n", name);
+                    found_mergable = TRUE;
+                    purple_buddy_set_protocol_data(buddy, member);
+                    bnet_clan_member_set_joindate(member, bnet_clan_member_get_joindate((BnetClanMember *)current_member));
+                    break;
+                }
+                buddies = g_slist_next(buddies);
+            }
+            if (!found_mergable) {
+                purple_debug_info("bnet", "Clan diff: %s added\n", name);
+                buddy = purple_buddy_new(bnet->account, name, name);
+                purple_blist_node_set_flags(PURPLE_BLIST_NODE(buddy), PURPLE_BLIST_NODE_FLAG_NO_SAVE);
+                purple_blist_add_buddy(buddy, NULL, group, NULL);
+                purple_buddy_set_protocol_data(buddy, member);
+                purple_prpl_got_user_status(bnet->account, name, prpl_status, NULL);
+            } else if (bnet_clan_member_get_status((BnetClanMember *)current_member) !=
+                    bnet_clan_member_get_status(member)) {
+                purple_debug_info("bnet", "Clan diff: %s updated\n", name);
+                purple_prpl_got_user_status(bnet->account, name, prpl_status, NULL);
+            }
+            el = g_list_next(el);
+        }
+    } else if (bnet->clan_members_in_blist) {
+        // the user turned off the setting while connected
+        // prpl holds the memory to the old list, do not free it
+        bnet->clan_members_in_blist = FALSE;
+        do_not_free = TRUE;
+    }
+
+    bnet_clan_info_set_members(bnet->clan_info, members, !do_not_free);
 }
 
 static void
@@ -4571,6 +4642,16 @@ bnet_recv_CLANMEMBERINFO(BnetConnectionData *bnet, BnetPacket *pkt)
             clan_name = bnet_packet_read_cstring(pkt);
             clan_rank = bnet_packet_read_byte(pkt);
             clan_joindate = bnet_packet_read_qword(pkt);
+
+            if (bnet_clan_info_get_tag(bnet->clan_info) == bnet->lookup_info_clan) {
+                BnetClanMember *member = bnet_clan_info_get_member(bnet->clan_info, bnet->lookup_info_user);
+                bnet_clan_info_set_name(bnet->clan_info, g_strdup(clan_name));
+                purple_debug_info("bnet", "My Clan %s name: %s\n", s_clan, clan_name);
+                if (member != NULL) {
+                    bnet_clan_member_set_joindate(member, clan_joindate);
+                    //purple_debug_info("bnet", "My %s joindate: %llu\n", bnet->lookup_info_user, clan_joindate);
+                }
+            }
             break;
         case BNET_CLAN_RESPONSE_USERNOTFOUND:
             purple_debug_warning("bnet", "Error retrieving member info for %s: user not found in that clan\n", bnet->lookup_info_user);
@@ -4580,24 +4661,7 @@ bnet_recv_CLANMEMBERINFO(BnetConnectionData *bnet, BnetPacket *pkt)
             break;
     }
 
-    switch (clan_rank) {
-        case BNET_CLAN_RANK_CHIEFTAIN:
-            s_rank = "Chieftain";
-            break;
-        case BNET_CLAN_RANK_SHAMAN:
-            s_rank = "Shaman";
-            break;
-        case BNET_CLAN_RANK_GRUNT:
-            s_rank = "Grunt";
-            break;
-        case BNET_CLAN_RANK_PEON:
-            s_rank = "Peon";
-            break;
-        case BNET_CLAN_RANK_INITIATE:
-            s_rank = "Peon (7-day probation period)";
-            break;
-    }
-
+    s_rank = bnet_clan_rank_to_string(clan_rank);
     s_clan_joindate = bnet_format_filetime(clan_joindate);
 
     if (bnet->lookup_info_await & BNET_LOOKUP_INFO_AWAIT_W3_CLAN_MI) {
@@ -5378,7 +5442,7 @@ bnet_format_strsec(char *secs_str)
     hrs %= 24;
 
     if (strlen(secs_str) == 0 || secs <= 0) {
-        return g_strdup("now");
+        return g_strdup("0 seconds");
     }
 
     if (days == 1) {
@@ -5441,7 +5505,7 @@ bnet_friend_update(const BnetConnectionData *bnet, int index,
 
     if (!buddy) {
         // get or create default "Buddies" group
-        PurpleGroup *grp = purple_group_new("Buddies");
+        PurpleGroup *grp = purple_group_new(purple_account_get_string(bnet->account, "grpfriends", BNET_DEFAULT_GROUP_FRIENDS));
         // create a new buddy
         buddy = purple_buddy_new(bnet->account, bfi->account, bfi->account);
         // add to the buddy list
@@ -5558,7 +5622,7 @@ bnet_close(PurpleConnection *gc)
         }
         if (bnet->clan_info != NULL) {
             purple_debug_info("bnet", "free clan_info\n");
-            bnet_clan_info_free(bnet->clan_info);
+            bnet_clan_info_free(bnet->clan_info, !bnet->clan_members_in_blist);
             bnet->clan_info = NULL;
         }
         if (bnet->channel_list != NULL) {
@@ -6782,6 +6846,33 @@ bnet_channel_flags_to_prpl_flags(BnetChatEventFlags flags)
     return result;
 }
 
+static gchar *
+bnet_get_chat_name(GHashTable *components)
+{
+    gchar *room = g_hash_table_lookup(components, "channel");
+    if (room == NULL) {
+        room = g_hash_table_lookup(components, "name");
+        if (room == NULL) {
+            return NULL;
+        }
+    }
+    return room;
+}
+
+static void
+bnet_set_chat_topic(PurpleConnection *gc, int chat_id, const char *topic)
+{
+    BnetConnectionData *bnet = gc->proto_data;
+    if (bnet_is_w3(bnet) &&
+            bnet->clan_info != NULL &&
+            bnet_clan_info_get_tag(bnet->clan_info) != 0) {
+        BnetClanMemberRank my_rank = bnet_clan_info_get_my_rank(bnet->clan_info);
+        if (my_rank == BNET_CLAN_RANK_SHAMAN || my_rank == BNET_CLAN_RANK_CHIEFTAIN) {
+            bnet_send_CLANSETMOTD(bnet, 0xbaadf00du, topic);
+        }
+    }
+}
+
 static void
 bnet_join_chat(PurpleConnection *gc, GHashTable *components)
 {
@@ -6897,12 +6988,13 @@ bnet_chat_im(PurpleConnection *gc, int chat_id, const char *message, PurpleMessa
         return 0;
     } else {
         int len = strlen(msg_nohtml);
+        gchar *esc_text = bnet_escape_text(msg_nohtml, -1, FALSE);
         if (bnet->emulate_telnet) {
             bnet_send_telnet_line(bnet, (char *)msg_nohtml);
         } else {
             bnet_send_CHATCOMMAND(bnet, (char *)msg_nohtml);
         }
-        serv_got_chat_in(gc, bnet->channel_id, bnet->username, PURPLE_MESSAGE_SEND, msg_nohtml, time(NULL));
+        serv_got_chat_in(gc, bnet->channel_id, bnet->username, PURPLE_MESSAGE_SEND, esc_text, time(NULL));
         g_free(msg_nohtml);
         return len;
     }
@@ -6983,6 +7075,17 @@ bnet_tooltip_text(PurpleBuddy *buddy,
         }
         if (is_available) {
             purple_notify_user_info_add_pair_plaintext(info, "Status", "Available");
+        }
+    } else if (bfi->type == BNET_USER_TYPE_CLANMEMBER) {
+        BnetClanMember *bcmi = (BnetClanMember *)bfi;
+        if (bnet_clan_member_get_status(bcmi) != BNET_CLAN_STATUS_OFFLINE) {
+            purple_notify_user_info_add_pair_plaintext(info, "Status", "Online");
+        }
+        purple_notify_user_info_add_pair_plaintext(info, "Clan rank", bnet_clan_rank_to_string(bnet_clan_member_get_rank(bcmi)));
+        if (bnet_clan_member_get_joindate(bcmi) != 0) {
+            gchar *s_joindate = bnet_format_filetime(bnet_clan_member_get_joindate(bcmi));
+            purple_notify_user_info_add_pair_plaintext(info, "Clan join date", s_joindate);
+            g_free(s_joindate);
         }
     }
 }
@@ -7536,7 +7639,7 @@ bnet_actions(PurplePlugin *plugin, gpointer context)
 static void
 bnet_rename_group(PurpleConnection *gc, const char *old_name, PurpleGroup *group, GList *moved_buddies)
 {
-    // ignore
+    // ignore: Battle.net does not support friend list or clan list groups
 }
 
 static PurplePluginProtocolInfo prpl_info =
@@ -7574,7 +7677,7 @@ static PurplePluginProtocolInfo prpl_info =
     NULL,                               /* set_permit_deny */
     bnet_join_chat,                     /* join_chat */
     NULL,                               /* reject_chat */
-    NULL,                               /* get_chat_name */
+    bnet_get_chat_name,                 /* get_chat_name */
     NULL,                               /* chat_invite */
     NULL,                               /* chat_leave */
     NULL,                               /* chat_whisper */
@@ -7592,7 +7695,7 @@ static PurplePluginProtocolInfo prpl_info =
     NULL,                               /* set_buddy_icon */
     NULL,                               /* remove_group */
     NULL,                               /* get_cb_real_name */
-    NULL,                               /* set_chat_topic */
+    bnet_set_chat_topic,                /* set_chat_topic */
     NULL,                               /* find_blist_chat */
     bnet_roomlist_get_list,             /* roomlist_get_list */
     bnet_roomlist_cancel,               /* roomlist_cancel */
@@ -7749,7 +7852,16 @@ init_plugin(PurplePlugin *plugin)
     option = purple_account_option_string_new("Logon Server", "bnlsserver", BNET_DEFAULT_BNLSSERVER);
     prpl_info.protocol_options = g_list_append(prpl_info.protocol_options, option);
 
-    option = purple_account_option_bool_new("Hide mutual friend status-change messages", "hidemutual", TRUE);
+    option = purple_account_option_string_new("Default friends group", "grpfriends", BNET_DEFAULT_GROUP_FRIENDS);
+    prpl_info.protocol_options = g_list_append(prpl_info.protocol_options, option);
+
+    option = purple_account_option_bool_new("Show mutual friend status-change messages", "showmutual", FALSE);
+    prpl_info.protocol_options = g_list_append(prpl_info.protocol_options, option);
+
+    option = purple_account_option_bool_new("Show clan members on buddy list (buggy)", "showgrpclan", FALSE);
+    prpl_info.protocol_options = g_list_append(prpl_info.protocol_options, option);
+
+    option = purple_account_option_string_new("Default clan members group", "grpclan", BNET_DEFAULT_GROUP_CLAN);
     prpl_info.protocol_options = g_list_append(prpl_info.protocol_options, option);
 
     for (c = bnet_cmds; c && c->name; c++) {

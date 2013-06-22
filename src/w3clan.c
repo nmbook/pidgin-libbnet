@@ -39,6 +39,8 @@ struct _BnetClanMember {
     BnetClanMemberRank rank;
     BnetClanMemberStatus status;
     gchar *location;
+
+    guint64 join_date;
 };
 
 struct _BnetClanInfo {
@@ -103,6 +105,25 @@ bnet_clan_string_to_tag(const gchar *tag_string)
     data.as_int = (BnetClanTag)0;
     g_memmove(data.as_str, tag_string, MIN(strlen(tag_string), 4));
     return data.as_int;
+}
+
+const gchar *
+bnet_clan_rank_to_string(const BnetClanMemberRank rank)
+{
+    switch (rank) {
+        case BNET_CLAN_RANK_CHIEFTAIN:
+            return "Chieftain";
+        case BNET_CLAN_RANK_SHAMAN:
+            return "Shaman";
+        case BNET_CLAN_RANK_GRUNT:
+            return "Grunt";
+        case BNET_CLAN_RANK_PEON:
+            return "Peon";
+        case BNET_CLAN_RANK_INITIATE:
+            return "Peon (7-day probation)";
+        default:
+            return "Unknown";
+    }
 }
 
 gboolean
@@ -200,7 +221,7 @@ bnet_clan_info_leave_clan(BnetClanInfo *info)
 }
     
 void
-bnet_clan_info_free(BnetClanInfo *info)
+bnet_clan_info_free(BnetClanInfo *info, gboolean free_members)
 {
     if (info != NULL) {
         struct _BnetClanInfo *bcli = (struct _BnetClanInfo *)info;
@@ -208,7 +229,7 @@ bnet_clan_info_free(BnetClanInfo *info)
         if (bcli->motd != NULL) {
             g_free(bcli->motd);
         }
-        if (bcli->members != NULL) {
+        if (free_members && bcli->members != NULL) {
             g_list_free_full(bcli->members, (GDestroyNotify)bnet_clan_member_free);
         }
         g_free(info);
@@ -242,15 +263,32 @@ bnet_clan_info_set_motd(BnetClanInfo *info, gchar *motd)
     ((struct _BnetClanInfo *)info)->motd = motd;
 }
 
+gchar *
+bnet_clan_info_get_name(const BnetClanInfo *info)
+{
+    return ((struct _BnetClanInfo *)info)->name;
+}
+
 void
-bnet_clan_info_set_members(BnetClanInfo *info, GList *members)
+bnet_clan_info_set_name(BnetClanInfo *info, gchar *name)
+{
+    if (((struct _BnetClanInfo *)info)->name != NULL) {
+        g_free(((struct _BnetClanInfo *)info)->name);
+    }
+    ((struct _BnetClanInfo *)info)->name = name;
+}
+
+void
+bnet_clan_info_set_members(BnetClanInfo *info, GList *members, gboolean free_old_list)
 {
     struct _BnetClanInfo *bcli = (struct _BnetClanInfo *)info;
-    g_list_free_full(bcli->members, (GDestroyNotify)bnet_clan_member_free);
+    if (free_old_list) {
+        g_list_free_full(bcli->members, (GDestroyNotify)bnet_clan_member_free);
+    }
     bcli->members = members;
 }
 
-const BnetClanMember *
+BnetClanMember *
 bnet_clan_info_get_member(const BnetClanInfo *info, gchar *name)
 {
     struct _BnetClanInfo *bcli = (struct _BnetClanInfo *)info;
@@ -321,6 +359,18 @@ void
 bnet_clan_member_set_status(BnetClanMember *member, BnetClanMemberStatus status)
 {
     member->status = status;
+}
+
+guint64
+bnet_clan_member_get_joindate(const BnetClanMember *member)
+{
+    return member->join_date;
+}
+
+void
+bnet_clan_member_set_joindate(BnetClanMember *member, guint64 joindate)
+{
+    member->join_date = joindate;
 }
 
 void

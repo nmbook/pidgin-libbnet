@@ -83,10 +83,12 @@
 #define PLUGIN_STR_VER      QUOTE(PLUGIN_MAJOR_VER.PLUGIN_MINOR_VER.PLUGIN_MICRO_VER)
 
 // default setting values
-#define BNET_DEFAULT_SERVER     "uswest.battle.net"
-#define BNET_DEFAULT_PORT        6112
-#define BNET_DEFAULT_BNLSSERVER "bnls.net"
-#define BNET_DEFAULT_BNLSPORT    9367
+#define BNET_DEFAULT_SERVER        "uswest.battle.net"
+#define BNET_DEFAULT_PORT           6112
+#define BNET_DEFAULT_BNLSSERVER    "bnls.net"
+#define BNET_DEFAULT_BNLSPORT       9367
+#define BNET_DEFAULT_GROUP_FRIENDS "Friends"
+#define BNET_DEFAULT_GROUP_CLAN    "Clan %T members"
 
 // logon steps
 #define BNET_STEP_COUNT      5
@@ -103,7 +105,7 @@
 // status types
 #define BNET_STATUS_ONLINE  "Online"
 #define BNET_STATUS_AWAY    "Away"
-#define BNET_STATUS_DND     "Do not disturb"
+#define BNET_STATUS_DND     "Do Not Disturb"
 #define BNET_STATUS_OFFLINE "Offline"
 
 // buffer size
@@ -679,6 +681,8 @@ typedef struct {
     BnetClanInfo *clan_info;
     // W3 clan set motd fields in dialog
     PurpleRequestFields *set_motd_fields;
+    // if clan members are in the prpl buddy list, so we know whether we can free them
+    gboolean clan_members_in_blist;
     
     // status data:
     // away: are we currently away?
