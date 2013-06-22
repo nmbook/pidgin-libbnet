@@ -1651,7 +1651,7 @@ bnet_keepalive_timer(BnetConnectionData *bnet)
             bnet_send_FRIENDSLIST(bnet);
         }
 
-        if (bnet_clan_info_get_tag(bnet->clan_info) != 0) {
+        if (bnet->clan_info != NULL && bnet_clan_info_get_tag(bnet->clan_info) != 0) {
             // SID_CLANMEMBERLIST; every 2 minutes, alternating with FRIENDSLIST and CLANMOTD
             if ((bnet->ka_tick % 4) == 1) {
                 int memblist_cookie = bnet_clan_packet_register(bnet->clan_info, BNET_SID_CLANMEMBERLIST, NULL);
@@ -2094,7 +2094,7 @@ bnet_recv_event_SHOWUSER(BnetConnectionData *bnet, PurpleConvChat *chat,
                     chat = purple_conversation_get_chat_data(conv);
                 }
                 if (chat != NULL) {
-                    if (bnet_clan_info_get_tag(bnet->clan_info) != 0) {
+                    if (bnet->clan_info != NULL && bnet_clan_info_get_tag(bnet->clan_info) != 0) {
                         if (bnet_clan_is_clan_channel(bnet->clan_info, bnet->channel_name)) {
                             gchar *motd = bnet_clan_info_get_motd(bnet->clan_info);
                             purple_conv_chat_set_topic(chat, "(clan leader)", motd);
@@ -6249,7 +6249,7 @@ bnet_lookup_info_cached_clan(BnetConnectionData *bnet)
     BnetClanTag clan_tag;
     gchar *s_clan = NULL;
     
-    if (bnet_clan_info_get_tag(bnet->clan_info) == 0) {
+    if (bnet->clan_info != NULL && bnet_clan_info_get_tag(bnet->clan_info) == 0) {
         return FALSE;
     }
 
@@ -6552,6 +6552,7 @@ bnet_action_set_motd(PurplePluginAction *action)
 
     if (bnet == NULL) return;
     if (bnet->emulate_telnet) return;
+    if (bnet->clan_info == NULL) return;
     if (bnet_clan_info_get_tag(bnet->clan_info) == 0) return;
 
     my_rank = bnet_clan_info_get_my_rank(bnet->clan_info);
@@ -7520,7 +7521,7 @@ bnet_actions(PurplePlugin *plugin, gpointer context)
     action = purple_plugin_action_new("Show News and MOTD...", bnet_action_show_news);
     list = g_list_append(list, action);
 
-    if (bnet_clan_info_get_tag(bnet->clan_info) != 0) {
+    if (bnet->clan_info != NULL && bnet_clan_info_get_tag(bnet->clan_info) != 0) {
         my_rank = bnet_clan_info_get_my_rank(bnet->clan_info);
         if (my_rank == BNET_CLAN_RANK_SHAMAN ||
                 my_rank == BNET_CLAN_RANK_CHIEFTAIN) {
