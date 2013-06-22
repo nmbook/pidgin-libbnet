@@ -42,25 +42,27 @@ struct _BnetClanMember {
 };
 
 struct _BnetClanInfo {
-    // clan tag
+    // we can now init without being in a clan, for the cookie list (SID_W3PROFILE, SID_W3GENERAL, SID_CLANMEMBERINFO)
+    gboolean in_clan;
+    // clan tag -- 0 if in_clan = FALSE
     BnetClanTag tag;
-    
-    // clan name
+    // clan name -- NULL if in_clan = FALSE
     gchar *name;
-    
-    // clan MOTD
+    // clan MOTD -- NULL if in_clan = FALSE
     gchar *motd;
-    
-    // my rank
+    // my rank -- -1 if in_clan = FALSE
     BnetClanMemberRank my_rank;
-    
-    // GList<BnetClanMember>
+    // GList<BnetClanMember> -- NULL if not received
     GList *members;
-    
-    // pending packets to cookie mapping
+    // pending packets to cookie mapping -- not NULL
     GHashTable *cookie_list;
 };
 
+/*
+ * Converts DWORD to tag-string
+ * '\0ToB' -> "BoT\0"
+ * 'RATS' -> "STAR'
+ */
 gchar *
 bnet_clan_tag_to_string(const BnetClanTag tag)
 {
@@ -69,16 +71,28 @@ bnet_clan_tag_to_string(const BnetClanTag tag)
         gchar as_str[4];
         BnetClanTag as_int;
     } data;
+    int offset = 0;
+
+    if (tag == 0) {
+        return g_strdup("");
+    } else {
+        while (!((tag >> (offset << 3)) & 0xff)) {
+            offset++;
+        }
+    }
+
     data.as_int = tag;
     ret = g_malloc0(5);
-    ret[0] = data.as_str[3];
-    ret[1] = data.as_str[2];
-    ret[2] = data.as_str[1];
-    ret[3] = data.as_str[0];
-    ret[4] = '\0';
+    g_memmove(ret, data.as_str + offset, 4 - offset);
+    g_strreverse(ret);
     return ret;
 }
 
+/*
+ * Converts tag-like string to DWORD
+ * "STAR\0" -> 'RATS'
+ * "BoT\0" -> '\0ToB'
+ */
 BnetClanTag
 bnet_clan_string_to_tag(const gchar *tag_string)
 {
@@ -112,17 +126,11 @@ bnet_clan_is_clan_channel(const BnetClanInfo *info, const char *channel_name_a)
 guint32
 bnet_clan_packet_register(BnetClanInfo *info, const guint8 packet_id, gpointer data)
 {
-    static guint32 cookie = 0;
+    static guint32 cookie = 1;
     
     struct BnetClanPacketKey *key = NULL;
     
     cookie++;
-    
-    // this means we haven't init'd yet
-    // we don't init till we log in or receive SID_CLANINFO
-    if (info == NULL) {
-        return 0;
-    }
     
     key = g_new(struct BnetClanPacketKey, 1);
     key->packet_id = packet_id;
@@ -138,10 +146,6 @@ bnet_clan_packet_unregister(BnetClanInfo *info, const guint8 packet_id, const gu
     gpointer ret;
     struct BnetClanPacketKey *key = NULL;
     
-    if (info == NULL) {
-        return 0;
-    }
-    
     key = g_new(struct BnetClanPacketKey, 1);
     key->packet_id = packet_id;
     key->cookie = cookie;
@@ -155,7 +159,7 @@ bnet_clan_packet_unregister(BnetClanInfo *info, const guint8 packet_id, const gu
 }
 
 BnetClanInfo *
-bnet_clan_info_new(BnetClanTag tag, BnetClanMemberRank rank)
+bnet_clan_info_new(void)
 {
     struct _BnetClanInfo *bcli = g_new0(struct _BnetClanInfo, 1);
     bcli->cookie_list = g_hash_table_new_full(
@@ -163,37 +167,68 @@ bnet_clan_info_new(BnetClanTag tag, BnetClanMemberRank rank)
                         (GEqualFunc)bnet_clan_packet_keyequal,
                         (GDestroyNotify)bnet_clan_packet_keyfree,
                         NULL);
-    bcli->tag = tag;
-    bcli->my_rank = rank;
+    bcli->in_clan = FALSE;
     return (BnetClanInfo *) bcli;
+}
+
+void
+bnet_clan_info_join_clan(BnetClanInfo *info, BnetClanTag tag, BnetClanMemberRank rank)
+{
+    if (info != NULL) {
+        struct _BnetClanInfo *bcli = (struct _BnetClanInfo *)info;
+        bcli->in_clan = TRUE;
+        bcli->tag = tag;
+        bcli->my_rank = rank;
+    }
+}
+
+void
+bnet_clan_info_leave_clan(BnetClanInfo *info)
+{
+    if (info != NULL) {
+        struct _BnetClanInfo *bcli = (struct _BnetClanInfo *)info;
+        bcli->in_clan = FALSE;
+        if (bcli->motd != NULL) {
+            g_free(bcli->motd);
+        }
+        bcli->motd = NULL;
+        if (bcli->members != NULL) {
+            g_list_free_full(bcli->members, (GDestroyNotify)bnet_clan_member_free);
+        }
+        bcli->members = NULL;
+    }
 }
     
 void
 bnet_clan_info_free(BnetClanInfo *info)
 {
     if (info != NULL) {
-        g_hash_table_destroy(((struct _BnetClanInfo *)info)->cookie_list);
-        if (((struct _BnetClanInfo *)info)->motd != NULL) {
-            g_free(((struct _BnetClanInfo *)info)->motd);
+        struct _BnetClanInfo *bcli = (struct _BnetClanInfo *)info;
+        g_hash_table_destroy(bcli->cookie_list);
+        if (bcli->motd != NULL) {
+            g_free(bcli->motd);
+        }
+        if (bcli->members != NULL) {
+            g_list_free_full(bcli->members, (GDestroyNotify)bnet_clan_member_free);
         }
         g_free(info);
     }
 }
 
 BnetClanTag
-bnet_clan_info_get_tag(BnetClanInfo *info)
+bnet_clan_info_get_tag(const BnetClanInfo *info)
 {
     return ((struct _BnetClanInfo *)info)->tag;
 }
 
 BnetClanMemberRank
-bnet_clan_info_get_my_rank(BnetClanInfo *info)
+bnet_clan_info_get_my_rank(const BnetClanInfo *info)
 {
     return ((struct _BnetClanInfo *)info)->my_rank;
 }
 
 gchar *
-bnet_clan_info_get_motd(BnetClanInfo *info)
+bnet_clan_info_get_motd(const BnetClanInfo *info)
 {
     return ((struct _BnetClanInfo *)info)->motd;
 }
@@ -205,6 +240,30 @@ bnet_clan_info_set_motd(BnetClanInfo *info, gchar *motd)
         g_free(((struct _BnetClanInfo *)info)->motd);
     }
     ((struct _BnetClanInfo *)info)->motd = motd;
+}
+
+void
+bnet_clan_info_set_members(BnetClanInfo *info, GList *members)
+{
+    struct _BnetClanInfo *bcli = (struct _BnetClanInfo *)info;
+    g_list_free_full(bcli->members, (GDestroyNotify)bnet_clan_member_free);
+    bcli->members = members;
+}
+
+const BnetClanMember *
+bnet_clan_info_get_member(const BnetClanInfo *info, gchar *name)
+{
+    struct _BnetClanInfo *bcli = (struct _BnetClanInfo *)info;
+    GList *el = NULL;
+    el = g_list_first(bcli->members);
+    while (el != NULL) {
+        struct _BnetClanMember *member = el->data;
+        if (g_ascii_strcasecmp(name, member->name) == 0) {
+            return (BnetClanMember *)member;
+        }
+        el = g_list_next(el);
+    }
+    return NULL;
 }
 
 BnetClanMember *
@@ -220,13 +279,13 @@ bnet_clan_member_new(gchar *name, BnetClanMemberRank rank, BnetClanMemberStatus 
 }
 
 gchar *
-bnet_clan_member_get_name(BnetClanMember *member)
+bnet_clan_member_get_name(const BnetClanMember *member)
 {
     return member->name;
 }
 
 gchar *
-bnet_clan_member_get_location(BnetClanMember *member)
+bnet_clan_member_get_location(const BnetClanMember *member)
 {
     return member->location;
 }
@@ -241,7 +300,7 @@ bnet_clan_member_set_location(BnetClanMember *member, gchar *location)
 }
 
 BnetClanMemberRank
-bnet_clan_member_get_rank(BnetClanMember *member)
+bnet_clan_member_get_rank(const BnetClanMember *member)
 {
     return member->rank;
 }
@@ -253,7 +312,7 @@ bnet_clan_member_set_rank(BnetClanMember *member, BnetClanMemberRank rank)
 }
 
 BnetClanMemberStatus
-bnet_clan_member_get_status(BnetClanMember *member)
+bnet_clan_member_get_status(const BnetClanMember *member)
 {
     return member->status;
 }

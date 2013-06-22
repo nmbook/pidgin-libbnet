@@ -139,8 +139,7 @@ bnet_connect(PurpleAccount *account, const gboolean do_register)
     bnet->port = purple_account_get_int(account, "port", BNET_DEFAULT_PORT);
     bnet->bnls_server = g_strdup(purple_account_get_string(account, "bnlsserver", BNET_DEFAULT_BNLSSERVER));
     bnet->bnls_port = BNET_DEFAULT_BNLSPORT;
-    bnet->product_id = *((BnetProductID *)
-            purple_account_get_string(bnet->account, "product", "RATS"));
+    bnet->product_id = bnet_clan_string_to_tag(purple_account_get_string(bnet->account, "product", "RATS"));
     if (bnet_is_d2(bnet)) {
         bnet->d2_star = "*";
     } else {
@@ -889,6 +888,21 @@ bnet_send_CDKEY(const BnetConnectionData *bnet)
 }
 
 static int
+bnet_send_W3PROFILE(const BnetConnectionData *bnet, const guint32 cookie, const gchar *username)
+{
+    BnetPacket *pkt = NULL;
+    int ret = -1;
+
+    pkt = bnet_packet_create(BNET_PACKET_BNCS);
+    bnet_packet_insert(pkt, &cookie, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, username, strlen(username) + 1);
+
+    ret = bnet_packet_send(pkt, BNET_SID_W3PROFILE, bnet->sbnet.fd);
+
+    return ret;
+}
+
+static int
 bnet_send_CDKEY2(const BnetConnectionData *bnet)
 {
     BnetPacket *pkt = NULL;
@@ -1196,6 +1210,42 @@ bnet_send_WRITEUSERDATA_2(const BnetConnectionData *bnet,
 }
 
 static int
+bnet_send_W3GENERAL_USERRECORD(const BnetConnectionData *bnet, guint32 cookie, gchar *username, BnetProductID product)
+{
+    BnetPacket *pkt = NULL;
+    int ret = -1;
+    BnetW3GeneralSubcommand subcommand = BNET_WID_USERRECORD;
+    
+    pkt = bnet_packet_create(BNET_PACKET_BNCS);
+    bnet_packet_insert(pkt, &subcommand, BNET_SIZE_BYTE);
+    bnet_packet_insert(pkt, &cookie, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, username, strlen(username) + 1);
+    bnet_packet_insert(pkt, &product, BNET_SIZE_DWORD);
+
+    ret = bnet_packet_send(pkt, BNET_SID_W3GENERAL, bnet->sbnet.fd);
+
+    return ret;
+}
+
+static int
+bnet_send_W3GENERAL_CLANRECORD(const BnetConnectionData *bnet, guint32 cookie, BnetClanTag clan_tag, BnetProductID product)
+{
+    BnetPacket *pkt = NULL;
+    int ret = -1;
+    BnetW3GeneralSubcommand subcommand = BNET_WID_CLANRECORD;
+    
+    pkt = bnet_packet_create(BNET_PACKET_BNCS);
+    bnet_packet_insert(pkt, &subcommand, BNET_SIZE_BYTE);
+    bnet_packet_insert(pkt, &cookie, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, &clan_tag, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, &product, BNET_SIZE_DWORD);
+
+    ret = bnet_packet_send(pkt, BNET_SID_W3GENERAL, bnet->sbnet.fd);
+
+    return ret;
+}
+
+static int
 bnet_send_NEWS_INFO(const BnetConnectionData *bnet)
 {
     BnetPacket *pkt = NULL;
@@ -1221,7 +1271,10 @@ bnet_send_AUTH_INFO(const BnetConnectionData *bnet)
     BnetProductID product_id = bnet->product_id;
     guint32 version_code = bnet->version_code;
     guint32 product_lang = 1033; // TODO: find pidgin's locale?!
-    guint32 local_ip = 0;
+    union {
+        guint32 as_int32;
+        guchar as_arr[4];
+    } local_ip;
     guint32 tz_bias = 0;
     guint32 mpq_lang = 1033;
     guint32 system_lang = 1033;
@@ -1229,11 +1282,11 @@ bnet_send_AUTH_INFO(const BnetConnectionData *bnet)
     char *country = "United States";
 
     const char *c_local_ip = purple_network_get_local_system_ip(bnet->sbnet.fd);
-    local_ip = *((guint32 *)(purple_network_ip_atoi(c_local_ip)));
+    g_memmove(local_ip.as_arr, purple_network_ip_atoi(c_local_ip), 4);
 
     tz_bias = (guint32)(bnet_get_tz_bias() / 60.0f);
 
-    purple_debug_info("bnet", "local ip %08x\n", local_ip);
+    purple_debug_info("bnet", "local ip %s\n", c_local_ip);
     purple_debug_info("bnet", "tz bias %d\n", tz_bias);
 
     pkt = bnet_packet_create(BNET_PACKET_BNCS);
@@ -1242,7 +1295,7 @@ bnet_send_AUTH_INFO(const BnetConnectionData *bnet)
     bnet_packet_insert(pkt, &product_id, BNET_SIZE_DWORD);
     bnet_packet_insert(pkt, &version_code, BNET_SIZE_DWORD);
     bnet_packet_insert(pkt, &product_lang, BNET_SIZE_DWORD);
-    bnet_packet_insert(pkt, &local_ip, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, &local_ip.as_int32, BNET_SIZE_DWORD);
     bnet_packet_insert(pkt, &tz_bias, BNET_SIZE_DWORD);
     bnet_packet_insert(pkt, &mpq_lang, BNET_SIZE_DWORD);
     bnet_packet_insert(pkt, &system_lang, BNET_SIZE_DWORD);
@@ -1486,6 +1539,22 @@ bnet_send_CLANMEMBERLIST(const BnetConnectionData *bnet, const int cookie)
     return ret;
 }
 
+static int
+bnet_send_CLANMEMBERINFO(const BnetConnectionData *bnet, const int cookie, const BnetClanTag tag, const gchar *username)
+{
+    BnetPacket *pkt = NULL;
+    int ret = -1;
+
+    pkt = bnet_packet_create(BNET_PACKET_BNCS);
+    bnet_packet_insert(pkt, &cookie, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, &tag, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, username, strlen(username) + 1);
+
+    ret = bnet_packet_send(pkt, BNET_SID_CLANMEMBERINFO, bnet->sbnet.fd);
+
+    return ret;
+}
+
 static void
 bnet_account_logon(BnetConnectionData *bnet)
 {
@@ -1523,10 +1592,16 @@ bnet_enter_channel(const BnetConnectionData *bnet)
 static void
 bnet_enter_chat(BnetConnectionData *bnet)
 {
-    if (bnet_is_d2(bnet) || bnet_is_w3(bnet)) {
+    if (bnet_is_d2(bnet)) {
+        bnet_send_GETCHANNELLIST(bnet);
+        bnet_send_ENTERCHAT(bnet);
+    } else if (bnet_is_w3(bnet)) {
+        bnet->clan_info = bnet_clan_info_new();
+        // NETGAMEPORT
         bnet_send_GETCHANNELLIST(bnet);
         bnet_send_ENTERCHAT(bnet);
     } else {
+        // UDPPINGRESPONSE
         bnet_send_ENTERCHAT(bnet);
         bnet_send_GETCHANNELLIST(bnet);
         bnet->sent_enter_channel = TRUE;
@@ -1561,7 +1636,7 @@ bnet_keepalive_timer(BnetConnectionData *bnet)
             bnet_send_FRIENDSLIST(bnet);
         }
 
-        if (bnet->clan_info != NULL) {
+        if (bnet_clan_info_get_tag(bnet->clan_info) != 0) {
             // SID_CLANMEMBERLIST; every 2 minutes, alternating with FRIENDSLIST and CLANMOTD
             if ((bnet->ka_tick % 4) == 1) {
                 int memblist_cookie = bnet_clan_packet_register(bnet->clan_info, BNET_SID_CLANMEMBERLIST, NULL);
@@ -1978,7 +2053,7 @@ bnet_recv_event_SHOWUSER(BnetConnectionData *bnet, PurpleConvChat *chat,
                     chat = purple_conversation_get_chat_data(conv);
                 }
                 if (chat != NULL) {
-                    if (bnet->clan_info != NULL) {
+                    if (bnet_clan_info_get_tag(bnet->clan_info) != 0) {
                         if (bnet_clan_is_clan_channel(bnet->clan_info, bnet->channel_name)) {
                             gchar *motd = bnet_clan_info_get_motd(bnet->clan_info);
                             purple_conv_chat_set_topic(chat, "(clan leader)", motd);
@@ -2291,20 +2366,35 @@ bnet_recv_event_INFO(BnetConnectionData *bnet, PurpleConvChat *chat,
                 }
             }
 
-            if (!handled && bnet->lookup_user != NULL) {
+            if (!handled && (bnet->lookup_info_await & BNET_LOOKUP_INFO_AWAIT_WHOIS)) {
                 handled = TRUE;
 
-                if (!bnet->lookup_info) {
-                    bnet->lookup_info = purple_notify_user_info_new();
+                bnet->lookup_info_got_locprod = TRUE;
+                bnet->lookup_info_await &= ~BNET_LOOKUP_INFO_AWAIT_WHOIS;
+                // allow away and dnd messages to be captured too
+                // bnet->lookup_info_await |= BNET_LOOKUP_INFO_AWAIT_WHOIS_STATUSES;
+
+                if (!(bnet->lookup_info_await & BNET_LOOKUP_INFO_AWAIT_CANCELLED)) {
+                    if (!bnet->lookup_info) {
+                        bnet->lookup_info = purple_notify_user_info_new();
+                    } else if (!bnet->lookup_info_first_section) {
+                        purple_notify_user_info_add_section_break(bnet->lookup_info);
+                    }
+                    bnet->lookup_info_first_section = FALSE;
+
+                    purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Current location", whois_location);
+                    purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Current product", whois_product);
+
+                    if (bnet->lookup_info_await == BNET_LOOKUP_INFO_AWAIT_NONE) {
+                        purple_notify_userinfo(bnet->account->gc, whois_user_n,
+                                bnet->lookup_info, bnet_lookup_info_close, bnet);
+                    }
+
+                    purple_debug_info("bnet", "Lookup complete: WHOIS(%s) [allowing WHOIS_STATUSES_*]\n", bnet->lookup_info_user);
                 } else {
-                    purple_notify_user_info_add_section_break(bnet->lookup_info);
+                    purple_debug_info("bnet", "Lookup complete: WHOIS([freed]) [allowing WHOIS_STATUSES_*]\n");
                 }
 
-                purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Current location", whois_location);
-                purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Current product", whois_product);
-
-                purple_notify_userinfo(bnet->account->gc, whois_user_n,
-                        bnet->lookup_info, bnet_whois_complete, bnet);
             }
 
             g_free(whois_user);
@@ -2358,19 +2448,29 @@ bnet_recv_event_INFO(BnetConnectionData *bnet, PurpleConvChat *chat,
                         BNET_STATUS_AWAY, "message", g_strdup(away_msg), NULL);
             }
 
-            if (!handled && bnet->lookup_user != NULL) {
+            if (!handled && (bnet->lookup_info_await & BNET_LOOKUP_INFO_AWAIT_WHOIS_STATUSES_AWAY)) {
                 handled = TRUE;
-                if (!bnet->lookup_info) {
-                    bnet->lookup_info = purple_notify_user_info_new();
+
+                bnet->lookup_info_await &= ~BNET_LOOKUP_INFO_AWAIT_WHOIS_STATUSES_AWAY;
+                if (!(bnet->lookup_info_await & BNET_LOOKUP_INFO_AWAIT_CANCELLED)) {
+                    if (!bnet->lookup_info) {
+                        bnet->lookup_info = purple_notify_user_info_new();
+                    } else if (!bnet->lookup_info_first_section) {
+                        purple_notify_user_info_add_section_break(bnet->lookup_info);
+                    }
+                    bnet->lookup_info_first_section = FALSE;
+
+                    purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Away", away_msg);
+
+                    /*if (bnet->lookup_info_await == BNET_LOOKUP_INFO_AWAIT_NONE) {
+                        purple_notify_userinfo(bnet->account->gc,
+                                bnet_d2_normalize(bnet->account, away_user_n),
+                                bnet->lookup_info, bnet_lookup_info_close, bnet);
+                    }*/
+                    purple_debug_info("bnet", "Lookup complete: WHOIS_STATUSES_AWAY(%s)\n", bnet->lookup_info_user);
                 } else {
-                    purple_notify_user_info_add_section_break(bnet->lookup_info);
+                    purple_debug_info("bnet", "Lookup complete: WHOIS_STATUSES_AWAY([freed])\n");
                 }
-
-                purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Away", away_msg);
-
-                purple_notify_userinfo(bnet->account->gc,
-                        bnet_d2_normalize(bnet->account, away_user_n),
-                        bnet->lookup_info, bnet_whois_complete, bnet);
             }
 
             if (!handled && bnet->last_sent_to != NULL) {
@@ -2440,19 +2540,29 @@ bnet_recv_event_INFO(BnetConnectionData *bnet, PurpleConvChat *chat,
                         BNET_STATUS_DND, "message", g_strdup(dnd_msg), NULL);
             }
 
-            if (!handled && bnet->lookup_user != NULL) {
+            if (!handled && (bnet->lookup_info_await & BNET_LOOKUP_INFO_AWAIT_WHOIS_STATUSES_DND)) {
                 handled = TRUE;
-                if (!bnet->lookup_info) {
-                    bnet->lookup_info = purple_notify_user_info_new();
+
+                bnet->lookup_info_await &= ~BNET_LOOKUP_INFO_AWAIT_WHOIS_STATUSES_DND;
+                if (!(bnet->lookup_info_await & BNET_LOOKUP_INFO_AWAIT_CANCELLED)) {
+                    if (!bnet->lookup_info) {
+                        bnet->lookup_info = purple_notify_user_info_new();
+                    } else if (!bnet->lookup_info_first_section) {
+                        purple_notify_user_info_add_section_break(bnet->lookup_info);
+                    }
+                    bnet->lookup_info_first_section = FALSE;
+
+                    purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Do Not Disturb", dnd_msg);
+
+                    /*if (bnet->lookup_info_await == BNET_LOOKUP_INFO_AWAIT_NONE) {
+                        purple_notify_userinfo(bnet->account->gc,
+                                bnet_d2_normalize(bnet->account, dnd_user_n),
+                                bnet->lookup_info, bnet_lookup_info_close, bnet);
+                    }*/
+                    purple_debug_info("bnet", "Lookup complete: WHOIS_STATUSES_DND(%s)\n", bnet->lookup_info_user);
                 } else {
-                    purple_notify_user_info_add_section_break(bnet->lookup_info);
+                    purple_debug_info("bnet", "Lookup complete: WHOIS_STATUSES_DND([freed])\n");
                 }
-
-                purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Do Not Disturb", dnd_msg);
-
-                purple_notify_userinfo(bnet->account->gc,
-                        bnet_d2_normalize(bnet->account, dnd_user_n),
-                        bnet->lookup_info, bnet_whois_complete, bnet);
             }
 
             g_free(dnd_user);
@@ -2541,8 +2651,9 @@ bnet_recv_event_INFO(BnetConnectionData *bnet, PurpleConvChat *chat,
             if (bnet->last_sent_to != NULL) {
                 handled = TRUE;
                 if (!purple_conv_present_error(bnet->last_sent_to, bnet->account, text)) {
-                    purple_notify_error(gc, "Do not disturb", text,
-                            g_strdup_printf("%s did not receive your whisper.", bnet->last_sent_to));
+                    gchar *tmp = g_strdup_printf("%s did not receive your whisper.", bnet->last_sent_to);
+                    purple_notify_error(gc, "Do not disturb", text, tmp);
+                    g_free(tmp);
                 }
 
                 bnet->awaiting_whisper_confirm = FALSE;
@@ -2585,19 +2696,28 @@ bnet_recv_event_ERROR(BnetConnectionData *bnet, PurpleConvChat *chat,
     ////////////////////////
     // WHISPERS AND WHOIS //
     if (strcmp(text, "That user is not logged on.") == 0) {
-        if (bnet->lookup_user != NULL) {
+        if (bnet->lookup_info_await & BNET_LOOKUP_INFO_AWAIT_WHOIS) {
             handled = TRUE;
-            if (!bnet->lookup_info) {
-                bnet->lookup_info = purple_notify_user_info_new();
+
+            bnet->lookup_info_await &= ~BNET_LOOKUP_INFO_AWAIT_WHOIS;
+            if (!(bnet->lookup_info_await & BNET_LOOKUP_INFO_AWAIT_CANCELLED)) {
+                if (!bnet->lookup_info) {
+                    bnet->lookup_info = purple_notify_user_info_new();
+                }
+
+                purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Current location", "Offline");
+
+                bnet->lookup_info_got_locprod = TRUE;
+
+                if (bnet->lookup_info_await == BNET_LOOKUP_INFO_AWAIT_NONE) {
+                    purple_notify_userinfo(gc,
+                            bnet_d2_normalize(bnet->account, bnet->lookup_info_user),
+                            bnet->lookup_info, bnet_lookup_info_close, bnet);
+                }
+                purple_debug_info("bnet", "Lookup complete: WHOIS(%s)\n", bnet->lookup_info_user);
             } else {
-                purple_notify_user_info_add_section_break(bnet->lookup_info);
+                purple_debug_info("bnet", "Lookup complete: WHOIS([freed])\n");
             }
-
-            purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Current location", "offline");
-
-            purple_notify_userinfo(gc,
-                    bnet_d2_normalize(bnet->account, bnet->lookup_user),
-                    bnet->lookup_info, bnet_whois_complete, bnet);
         }
 
         if (!handled && bnet->last_sent_to != NULL) {
@@ -2810,6 +2930,24 @@ bnet_recv_READUSERDATA(BnetConnectionData *bnet, BnetPacket *pkt)
                         bnet_packet_read_cstring(pkt));
             }
 
+            if (!bnet->writing_profile &&
+                    bnet->lookup_info_await & BNET_LOOKUP_INFO_AWAIT_USER_DATA) {
+                bnet->lookup_info_await &= ~BNET_LOOKUP_INFO_AWAIT_USER_DATA;
+                if (!(bnet->lookup_info_await & BNET_LOOKUP_INFO_AWAIT_CANCELLED)) {
+                    showing_lookup_dialog = TRUE;
+
+                    if (!bnet->lookup_info) {
+                        bnet->lookup_info = purple_notify_user_info_new();
+                    } else if (!bnet->lookup_info_first_section) {
+                        purple_notify_user_info_add_section_break(bnet->lookup_info);
+                    }
+                    bnet->lookup_info_first_section = FALSE;
+                    purple_debug_info("bnet", "Lookup complete: USER_DATA(%s)\n", bnet->lookup_info_user);
+                } else {
+                    purple_debug_info("bnet", "Lookup complete: USER_DATA([freed])\n");
+                }
+            }
+
             if (request_type & BNET_READUSERDATA_REQUEST_PROFILE) {
                 if (bnet->writing_profile) {
                     const char *psex = g_hash_table_lookup(userdata, "profile\\sex");
@@ -2817,17 +2955,9 @@ bnet_recv_READUSERDATA(BnetConnectionData *bnet, BnetPacket *pkt)
                     const char *ploc = g_hash_table_lookup(userdata, "profile\\location");
                     const char *pdescr = g_hash_table_lookup(userdata, "profile\\description");
                     bnet_profile_show_write_dialog(bnet, psex, page, ploc, pdescr);
-                } else if (bnet->lookup_user != NULL) {
+                } else if (showing_lookup_dialog) {
                     char *pstr_utf8 = NULL;
                     int section_count = 0;
-
-                    showing_lookup_dialog = TRUE;
-
-                    if (!bnet->lookup_info) {
-                        bnet->lookup_info = purple_notify_user_info_new();
-                    } else {
-                        purple_notify_user_info_add_section_break(bnet->lookup_info);
-                    }
 
                     // profile\sex
                     pstr = g_hash_table_lookup(userdata, "profile\\sex");
@@ -2881,73 +3011,66 @@ bnet_recv_READUSERDATA(BnetConnectionData *bnet, BnetPacket *pkt)
             }
 
             if (request_type & BNET_READUSERDATA_REQUEST_SYSTEM) {
-                if (bnet->lookup_user != NULL) {
+                if (showing_lookup_dialog) {
                     gboolean is_section = FALSE;
 
-                    showing_lookup_dialog = TRUE;
+                    // System\Time Logged
+                    pstr = g_hash_table_lookup(userdata, "System\\Time Logged");
+                    if (pstr != NULL && strlen(pstr) > 0) {
+                        gchar *str_sec = bnet_format_strsec(pstr);
+                        if (!is_section) {
+                            purple_notify_user_info_add_section_break(bnet->lookup_info);
+                            is_section = TRUE;
+                        }
 
-                    if (!bnet->lookup_info) {
-                        bnet->lookup_info = purple_notify_user_info_new();
+                        purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Account time logged", str_sec);
+                        g_free(str_sec);
                     }
 
                     // System\Account Created
                     pstr = g_hash_table_lookup(userdata, "System\\Account Created");
                     if (pstr != NULL && strlen(pstr) > 0) {
+                        gchar *str_time = bnet_format_filetime_string(pstr);
                         if (!is_section) {
                             purple_notify_user_info_add_section_break(bnet->lookup_info);
                             is_section = TRUE;
                         }
 
-                        purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Account creation time", 
-                                bnet_format_filetime(pstr));
+                        purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Account creation time", str_time);
+                        g_free(str_time);
                     }
 
                     // System\Last Logoff
                     pstr = g_hash_table_lookup(userdata, "System\\Last Logoff");
                     if (pstr != NULL && strlen(pstr) > 0) {
+                        gchar *str_time = bnet_format_filetime_string(pstr);
                         if (!is_section) {
                             purple_notify_user_info_add_section_break(bnet->lookup_info);
                             is_section = TRUE;
                         }
 
-                        purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Last logoff time", 
-                                bnet_format_filetime(pstr));
+                        purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Account last logged off", str_time);
+                        g_free(str_time);
                     }
 
                     // System\Last Logon
                     pstr = g_hash_table_lookup(userdata, "System\\Last Logon");
                     if (pstr != NULL && strlen(pstr) > 0) {
+                        gchar *str_time = bnet_format_filetime_string(pstr);
                         if (!is_section) {
                             purple_notify_user_info_add_section_break(bnet->lookup_info);
                             is_section = TRUE;
                         }
 
-                        purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Last logon time", 
-                                bnet_format_filetime(pstr));
-                    }
-
-                    // System\Time Logged
-                    pstr = g_hash_table_lookup(userdata, "System\\Time Logged");
-                    if (pstr != NULL && strlen(pstr) > 0) {
-                        if (!is_section) {
-                            purple_notify_user_info_add_section_break(bnet->lookup_info);
-                            is_section = TRUE;
-                        }
-
-                        purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Account time logged", 
-                                bnet_format_strsec(pstr));
+                        purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Account last logged on", str_time);
+                        g_free(str_time);
                     }
                 }
             }
 
             if (request_type & BNET_READUSERDATA_REQUEST_RECORD) {
-                if (bnet->lookup_user != NULL) {
+                if (showing_lookup_dialog) {
                     gboolean is_section = FALSE;
-                    showing_lookup_dialog = TRUE;
-
-                    if (!bnet->lookup_info) {
-                        bnet->lookup_info = purple_notify_user_info_new();
-                    }
 
                     for (j = 0; j < 4; j++) {
                         char *zero = "0";
@@ -2998,7 +3121,7 @@ bnet_recv_READUSERDATA(BnetConnectionData *bnet, BnetPacket *pkt)
                             if (strlen(lgame) == 0 || strcmp(lgameres, "NONE") == 0) {
                                 lgame = "never";
                             } else {
-                                char *tmp = bnet_format_filetime(lgame);
+                                char *tmp = bnet_format_filetime_string(lgame);
                                 lgame = g_strdup_printf("%s on %s", lgameres, tmp);
                                 g_free(tmp);
                             }
@@ -3061,9 +3184,11 @@ bnet_recv_READUSERDATA(BnetConnectionData *bnet, BnetPacket *pkt)
             }
 
             if (showing_lookup_dialog) {
-                purple_notify_userinfo(bnet->account->gc,
-                        bnet_d2_normalize(bnet->account, bnet->lookup_user),
-                        bnet->lookup_info, bnet_whois_complete, bnet);
+                if (bnet->lookup_info_await == BNET_LOOKUP_INFO_AWAIT_NONE) {
+                    purple_notify_userinfo(bnet->account->gc,
+                            bnet_d2_normalize(bnet->account, bnet->lookup_info_user),
+                            bnet->lookup_info, bnet_lookup_info_close, bnet);
+                }
             }
 
             bnet->userdata_requests = g_list_remove(bnet->userdata_requests, req);
@@ -3139,9 +3264,413 @@ bnet_recv_CDKEY(BnetConnectionData *bnet, BnetPacket *pkt)
 }
 
 static void
+bnet_recv_W3PROFILE(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+    guint32 cookie;
+    BnetClanResponseCode status;
+    BnetClanTag tag = (BnetClanTag) 0;
+    gchar *s_clan = NULL;
+    gchar *username = NULL;
+    
+    cookie = bnet_packet_read_dword(pkt);
+    status = bnet_packet_read_byte(pkt);
+    username = bnet_clan_packet_unregister(bnet->clan_info, BNET_SID_W3PROFILE, cookie);
+
+    if (username == NULL) {
+        username = strdup("");
+    }
+
+    switch (status) {
+        case BNET_CLAN_RESPONSE_SUCCESS:
+            /* location = */bnet_packet_read_cstring(pkt);
+            /* description = */bnet_packet_read_cstring(pkt);
+            tag = bnet_packet_read_dword(pkt);
+            bnet->lookup_info_found_clan = TRUE;
+            break;
+        default:
+            purple_debug_warning("bnet", "Error retrieving profile for %s: status code 0x%02x\n", username, status);
+            break;
+    }
+
+    s_clan = bnet_clan_tag_to_string(tag);
+
+    if (bnet->lookup_info_await & BNET_LOOKUP_INFO_AWAIT_W3_USER_PROFILE) {
+        bnet->lookup_info_await &= ~BNET_LOOKUP_INFO_AWAIT_W3_USER_PROFILE;
+        if (!(bnet->lookup_info_await & BNET_LOOKUP_INFO_AWAIT_CANCELLED)) {
+            //if (g_strcmp(bnet->lookup_info_user, username) == 0) { -- do this check if we use W3PROFILE for anything else
+            purple_debug_info("bnet", "Lookup complete: W3_USER_PROFILE(%s)\n", bnet->lookup_info_user);
+            if (tag != (BnetClanTag) 0) {
+                bnet->lookup_info_clan = tag;
+                // step 6b.1: get clan stats (await SID_WARCRAFTGENERAL.WID_CLANRECORD response)
+                bnet_lookup_info_w3_clan_stats(bnet);
+                // step 6b.2: get clan member join date (await SID_CLANMEMBERINFO response)
+                bnet_lookup_info_w3_clan_mi(bnet);
+            }
+            if (bnet->lookup_info_await == BNET_LOOKUP_INFO_AWAIT_NONE) {
+                purple_notify_userinfo(bnet->account->gc, bnet->lookup_info_user,
+                        bnet->lookup_info, bnet_lookup_info_close, bnet);
+            }
+        } else {
+            purple_debug_info("bnet", "Lookup complete: W3_USER_PROFILE([freed])\n");
+        }
+    } else {
+        purple_debug_warning("bnet", "Not waiting for 0x35 SID_W3PROFILE\n");
+    }
+
+    g_free(s_clan);
+    g_free(username);
+}
+
+static void
 bnet_recv_CDKEY2(BnetConnectionData *bnet, BnetPacket *pkt)
 {
     bnet_recv_CDKEY(bnet, pkt);
+}
+
+static const gchar *
+bnet_get_w3record_type_string(BnetW3RecordType type)
+{
+    switch (type) {
+        case BNET_W3RECORD_USER_SOLO:
+            return "Solo";
+        case BNET_W3RECORD_USER_TEAM:
+            return "Team";
+        case BNET_W3RECORD_USER_FFA:
+            return "FFA";
+        case BNET_W3RECORD_TEAM_2VS2:
+            return "Arranged 2 vs 2";
+        case BNET_W3RECORD_TEAM_3VS3:
+            return "Arranged 3 vs 3";
+        case BNET_W3RECORD_TEAM_4VS4:
+            return "Arranged 4 vs 4";
+        case BNET_W3RECORD_CLAN_SOLO:
+            return "Clan Solo";
+        case BNET_W3RECORD_CLAN_2VS2:
+            return "Clan 2 vs 2";
+        case BNET_W3RECORD_CLAN_3VS3:
+            return "Clan 3 vs 3";
+        case BNET_W3RECORD_CLAN_4VS4:
+            return "Clan 4 vs 4";
+        case 0: // race index 0
+            return "Random";
+        case 1: // race index 1
+            return "Human";
+        case 2: // race index 2
+            return "Orc";
+        case 3: // race index 3
+            return "Undead";
+        case 4: // race index 4
+            return "Night Elf";
+        case 5: // race index 5
+            return "Tournament";
+        default:
+            return "Unknown";
+    }
+}
+
+static void
+bnet_recv_W3GENERAL_USERRECORD(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+    guint32 cookie;
+    guint32 icon_id;
+    guint8 ladder_record_count;
+    guint8 race_record_count;
+    guint8 team_record_count;
+    int i, j;
+    
+    gchar *username;
+    gchar *s_icon = NULL;
+    const gchar *s_type = NULL;
+    gchar *prpl_key = NULL;
+    gchar *prpl_val = NULL;
+    
+    cookie = bnet_packet_read_dword(pkt);
+    icon_id = bnet_packet_read_dword(pkt);
+
+    username = bnet_clan_packet_unregister(bnet->clan_info, BNET_SID_W3GENERAL, cookie);
+
+    if (username == NULL) {
+        return;
+    }
+
+    s_icon = bnet_clan_tag_to_string(icon_id);
+
+    if (bnet->lookup_info_await & BNET_LOOKUP_INFO_AWAIT_W3_USER_STATS) {
+        bnet->lookup_info_await &= ~BNET_LOOKUP_INFO_AWAIT_W3_USER_STATS;
+        if (!(bnet->lookup_info_await & BNET_LOOKUP_INFO_AWAIT_CANCELLED)) {
+            //if (g_strcmp(bnet->lookup_info_user, username) == 0) { -- do this check if we use W3PROFILE for anything else
+            if (!bnet->lookup_info) {
+                bnet->lookup_info = purple_notify_user_info_new();
+            } else if (!bnet->lookup_info_first_section) {
+                purple_notify_user_info_add_section_break(bnet->lookup_info);
+            }
+            bnet->lookup_info_first_section = FALSE;
+
+            prpl_key = g_strdup_printf("%s profile icon", bnet_get_product_name(bnet->product_id));
+            purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, prpl_key, s_icon);
+            g_free(prpl_key);
+            
+            // ladder record parsing
+            ladder_record_count = bnet_packet_read_byte(pkt);
+
+            for (i = 0; i < ladder_record_count; i++) {
+                BnetW3RecordType type;
+                guint16 wins;
+                guint16 losses;
+                guint8 level;
+                guint16 exp;
+                guint32 rank;
+
+                gchar *s_rank = NULL;
+
+                type = bnet_packet_read_dword(pkt);
+                wins = bnet_packet_read_word(pkt);
+                losses = bnet_packet_read_word(pkt);
+                level = bnet_packet_read_byte(pkt);
+                /*guint8 level_bar = */bnet_packet_read_byte(pkt);
+                exp = bnet_packet_read_word(pkt);
+                rank = bnet_packet_read_dword(pkt);
+
+                s_type = bnet_get_w3record_type_string(type);
+
+                if (rank != 0) {
+                    s_rank = g_strdup_printf(", rank: %d", rank);
+                }
+                prpl_key = g_strdup_printf("%s record for %s", s_type, bnet_get_product_name(bnet->product_id));
+                prpl_val = g_strdup_printf("%d-%d (level: %d, exp: %d%s)", wins, losses, level, exp, s_rank);
+                purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, prpl_key, prpl_val);
+                g_free(prpl_key);
+                g_free(prpl_val);
+                g_free(s_rank);
+            }
+
+            // race record parsing
+            race_record_count = bnet_packet_read_byte(pkt);
+
+            for (i = 0; i < race_record_count; i++) {
+                guint16 wins;
+                guint16 losses;
+
+                wins = bnet_packet_read_word(pkt);
+                losses = bnet_packet_read_word(pkt);
+
+                s_type = bnet_get_w3record_type_string(i);
+
+                prpl_key = g_strdup_printf("%s record for %s", s_type, bnet_get_product_name(bnet->product_id));
+                prpl_val = g_strdup_printf("%d-%d", wins, losses);
+                purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, prpl_key, prpl_val);
+                g_free(prpl_key);
+                g_free(prpl_val);
+            }
+
+            // team record parsing
+            team_record_count = bnet_packet_read_byte(pkt);
+
+            for (i = 0; i < team_record_count; i++) {
+                BnetW3RecordType type;
+                guint16 wins;
+                guint16 losses;
+                guint8 level;
+                guint16 exp;
+                guint32 rank;
+                guint64 last_game;
+                guint8 partner_count;
+
+                gchar *partner_list = NULL;
+                gchar *s_last_game = NULL;
+                gchar *s_rank = NULL;
+
+                type = bnet_packet_read_dword(pkt);
+                wins = bnet_packet_read_word(pkt);
+                losses = bnet_packet_read_word(pkt);
+                level = bnet_packet_read_byte(pkt);
+                /*guint8 level_bar = */bnet_packet_read_byte(pkt);
+                exp = bnet_packet_read_word(pkt);
+                rank = bnet_packet_read_dword(pkt);
+                last_game = bnet_packet_read_qword(pkt);
+                partner_count = bnet_packet_read_byte(pkt);
+
+                for (j = 0; j < partner_count; j++) {
+                    if (partner_list == NULL) {
+                        partner_list = bnet_packet_read_cstring(pkt);
+                    } else {
+                        gchar *new_p = bnet_packet_read_cstring(pkt);
+                        gchar *new_l = g_strdup_printf("%s, %s", partner_list, new_p);
+                        g_free(partner_list);
+                        g_free(new_p);
+                        partner_list = new_l;
+                    }
+                }
+
+                s_type = bnet_get_w3record_type_string(type);
+
+                s_last_game = bnet_format_filetime(last_game);
+                if (rank != 0) {
+                    s_rank = g_strdup_printf(", rank: %d", rank);
+                }
+                prpl_key = g_strdup_printf("%s record for %s with %s", s_type, bnet_get_product_name(bnet->product_id), partner_list);
+                prpl_val = g_strdup_printf("%d-%d (level: %d, exp: %d%s, last played: %s)", wins, losses, level, exp, s_rank, s_last_game);
+                purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, prpl_key, prpl_val);
+                g_free(prpl_key);
+                g_free(prpl_val);
+                g_free(s_last_game);
+                if (s_rank != NULL) {
+                    g_free(s_rank);
+                }
+                if (partner_list != NULL) {
+                    g_free(partner_list);
+                }
+            }
+
+            if (ladder_record_count == 0 && race_record_count == 0 && team_record_count == 0) {
+                prpl_key = g_strdup_printf("Record for %s", bnet_get_product_name(bnet->product_id));
+                purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, prpl_key,
+                        "No game statistics are stored in this user's record.");
+                g_free(prpl_key);
+            }
+
+            if (bnet->lookup_info_await == BNET_LOOKUP_INFO_AWAIT_NONE) {
+                purple_notify_userinfo(bnet->account->gc, bnet->lookup_info_user,
+                        bnet->lookup_info, bnet_lookup_info_close, bnet);
+            }
+            
+            purple_debug_info("bnet", "Lookup complete: W3_USER_STATS(%s)\n", bnet->lookup_info_user);
+        } else {
+            purple_debug_info("bnet", "Lookup complete: W3_USER_STATS([freed])\n");
+        }
+    } else {
+        purple_debug_warning("bnet", "Not waiting for 0x44 SID_W3GENERAL.WID_USERRECORD\n");
+    }
+
+    g_free(s_icon);
+    g_free(username);
+}
+
+static void
+bnet_recv_W3GENERAL_CLANRECORD(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+    guint32 cookie;
+    guint8 ladder_record_count;
+    guint8 race_record_count;
+    int i;
+    
+    gchar *s_clan;
+    const gchar *s_type = NULL;
+    gchar *prpl_key = NULL;
+    gchar *prpl_val = NULL;
+    
+    cookie = bnet_packet_read_dword(pkt);
+
+    s_clan = bnet_clan_packet_unregister(bnet->clan_info, BNET_SID_W3GENERAL, cookie);
+
+    if (s_clan == NULL) {
+        return;
+    }
+
+    if (bnet->lookup_info_await & BNET_LOOKUP_INFO_AWAIT_W3_CLAN_STATS) {
+        bnet->lookup_info_await &= ~BNET_LOOKUP_INFO_AWAIT_W3_CLAN_STATS;
+        if (!(bnet->lookup_info_await & BNET_LOOKUP_INFO_AWAIT_CANCELLED)) {
+            purple_debug_info("bnet", "Lookup complete: W3_CLAN_STATS(Clan %s)\n", s_clan);
+            //if (g_strcmp(bnet->lookup_info_user, username) == 0) { -- do this check if we use W3PROFILE for anything else
+            if (!bnet->lookup_info) {
+                bnet->lookup_info = purple_notify_user_info_new();
+            } else if (!bnet->lookup_info_first_section) {
+                purple_notify_user_info_add_section_break(bnet->lookup_info);
+            }
+            bnet->lookup_info_first_section = FALSE;
+            
+            // ladder record parsing
+            ladder_record_count = bnet_packet_read_byte(pkt);
+
+            for (i = 0; i < ladder_record_count; i++) {
+                BnetW3RecordType type;
+                guint32 wins;
+                guint32 losses;
+                guint8 level;
+                guint32 exp;
+                guint32 rank;
+
+                gchar *s_rank = NULL;
+
+                type = bnet_packet_read_dword(pkt);
+                wins = bnet_packet_read_dword(pkt);
+                losses = bnet_packet_read_dword(pkt);
+                level = bnet_packet_read_byte(pkt);
+                /*guint8 level_bar = */bnet_packet_read_byte(pkt);
+                exp = bnet_packet_read_dword(pkt);
+                rank = bnet_packet_read_dword(pkt);
+
+                s_type = bnet_get_w3record_type_string(type);
+
+                if (rank != 0) {
+                    s_rank = g_strdup_printf(", rank: %d", rank);
+                }
+                prpl_key = g_strdup_printf("Clan %s %s record for %s", s_clan, s_type, bnet_get_product_name(bnet->product_id));
+                prpl_val = g_strdup_printf("%d-%d (level: %d, exp: %d%s)", wins, losses, level, exp, s_rank);
+                purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, prpl_key, prpl_val);
+                g_free(prpl_key);
+                g_free(prpl_val);
+                if (s_rank != NULL) {
+                    g_free(s_rank);
+                }
+            }
+
+            // race record parsing
+            race_record_count = bnet_packet_read_byte(pkt);
+
+            for (i = 0; i < race_record_count; i++) {
+                guint32 wins;
+                guint32 losses;
+
+                wins = bnet_packet_read_dword(pkt);
+                losses = bnet_packet_read_dword(pkt);
+
+                s_type = bnet_get_w3record_type_string(i);
+
+                prpl_key = g_strdup_printf("Clan %s %s record for %s", s_clan, s_type, bnet_get_product_name(bnet->product_id));
+                prpl_val = g_strdup_printf("%d-%d", wins, losses);
+                purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, prpl_key, prpl_val);
+                g_free(prpl_key);
+                g_free(prpl_val);
+            }
+
+            if (ladder_record_count == 0 && race_record_count == 0) {
+                prpl_key = g_strdup_printf("Clan %s record for %s", s_clan, bnet_get_product_name(bnet->product_id));
+                purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, prpl_key,
+                        "No game statistics are stored in this user's clan's record.");
+                g_free(prpl_key);
+            }
+
+            if (bnet->lookup_info_await == BNET_LOOKUP_INFO_AWAIT_NONE) {
+                purple_notify_userinfo(bnet->account->gc, bnet->lookup_info_user,
+                        bnet->lookup_info, bnet_lookup_info_close, bnet);
+            }
+        } else {
+            purple_debug_info("bnet", "Lookup complete: W3_CLAN_STATS([freed])\n");
+        }
+    } else {
+        purple_debug_warning("bnet", "Not waiting for 0x44 SID_W3GENERAL.WID_USERRECORD\n");
+    }
+
+    g_free(s_clan);
+}
+
+static void
+bnet_recv_W3GENERAL(BnetConnectionData *bnet, BnetPacket *pkt)
+{
+    BnetW3GeneralSubcommand subcommand = bnet_packet_read_byte(pkt);
+    switch (subcommand) {
+        case BNET_WID_USERRECORD:
+            bnet_recv_W3GENERAL_USERRECORD(bnet, pkt);
+            break;
+        case BNET_WID_CLANRECORD:
+            bnet_recv_W3GENERAL_CLANRECORD(bnet, pkt);
+            break;
+        default:
+            // unhandled
+            purple_debug_warning("bnet", "Received unhandled SID_W3GENERAL packet command 0x%02x\n", subcommand);
+            break;
+    }
 }
 
 static void
@@ -3200,21 +3729,20 @@ bnet_recv_AUTH_INFO(BnetConnectionData *bnet, BnetPacket *pkt)
 
         signature = (gchar *)bnet_packet_read(pkt, 128);
         if (signature == NULL) {
-            purple_debug_warning("bnet", "WarCraft III: No server signature for the current Battle.net server IP provided.\n");
+            purple_debug_warning("bnet", "WarCraft III: No server signature for the current Battle.net server IP provided. This may be a private server.\n");
         } else if (getpeername(bnet->sbnet.fd, &sa.as_generic, &sa_len) == 0) {
             struct in_addr addr = sa.as_in.sin_addr;
             purple_debug_info("bnet", "Server IP: %s\n", inet_ntoa(addr));
             if (srp_check_signature(addr.s_addr, signature) == FALSE) {
-                purple_debug_warning("bnet", "WarCraft III: Server sent an incorrect server signature for the current Battle.net server IP.\n");
+                purple_debug_warning("bnet", "WarCraft III: Server sent an incorrect server signature for the current Battle.net server IP. You are connecting through a proxy or this may be a malicious server.\n");
             } else {
                 purple_debug_info("bnet", "WarCraft III: Validated Battle.net server signature. This is an official Battle.net server.\n");
             }
             g_free(signature);
         } else {
-            purple_debug_warning("bnet", "WarCraft III: Unable to verify server signature for the current Battle.net server IP.\n");
+            purple_debug_warning("bnet", "WarCraft III: Unable to verify server signature for the current Battle.net server IP. Error getting peer IP: %s\n", strerror(errno));
             g_free(signature);
         }
-
     }
 
     bnet_bnls_send_VERSIONCHECKEX2(bnet,
@@ -3592,8 +4120,10 @@ bnet_recv_FRIENDSLIST(BnetConnectionData *bnet, BnetPacket *pkt)
 
             el = g_list_first(old_friends_list);
             while (el != NULL) {
-                if (strcmp(((BnetFriendInfo *)el->data)->account, account_name) == 0) {
-                    old_bfi = el->data;
+                if (el->data != NULL) {
+                    if (strcmp(((BnetFriendInfo *)el->data)->account, account_name) == 0) {
+                        old_bfi = el->data;
+                    }
                 }
                 el = g_list_next(el);
             }
@@ -3611,7 +4141,7 @@ bnet_recv_FRIENDSLIST(BnetConnectionData *bnet, BnetPacket *pkt)
                 bfi = old_bfi;
                 purple_debug_info("bnet", "Friend diff: %s still on list\n", bfi->account);
             }
-            bfi->tag |= BNET_USER_TAG_ONFRIENDLIST;
+            bfi->on_list = TRUE;
 
             bnet->friends_list = g_list_append(bnet->friends_list, bfi);
 
@@ -3626,22 +4156,24 @@ bnet_recv_FRIENDSLIST(BnetConnectionData *bnet, BnetPacket *pkt)
 
     el = g_list_first(old_friends_list);
     while (el != NULL) {
-        if (!(((BnetFriendInfo *)el->data)->tag & BNET_USER_TAG_ONFRIENDLIST)) {
-            PurpleBuddy *buddy;
-            BnetFriendInfo *old_bfi = NULL;
+        if (el->data != NULL) {
+            if (!((BnetFriendInfo *)el->data)->on_list) {
+                PurpleBuddy *buddy;
+                BnetFriendInfo *old_bfi = NULL;
 
-            old_bfi = el->data;
-            purple_debug_info("bnet", "Friend diff: %s no longer on list\n", old_bfi->account);
+                old_bfi = el->data;
+                purple_debug_info("bnet", "Friend diff: %s no longer on list\n", old_bfi->account);
 
-            buddy = purple_find_buddy(bnet->account, old_bfi->account);
+                buddy = purple_find_buddy(bnet->account, old_bfi->account);
 
-            bnet_friend_info_free(old_bfi);
+                bnet_friend_info_free(old_bfi);
 
-            if (buddy) {
-                // set proto data to NULL so that it doesn't /f r again.
-                purple_buddy_set_protocol_data(buddy, NULL);
-                // remove
-                purple_blist_remove_buddy(buddy);
+                if (buddy) {
+                    // set proto data to NULL so that it doesn't /f r again.
+                    purple_buddy_set_protocol_data(buddy, NULL);
+                    // remove
+                    purple_blist_remove_buddy(buddy);
+                }
             }
         }
         el = g_list_next(el);
@@ -3651,7 +4183,7 @@ bnet_recv_FRIENDSLIST(BnetConnectionData *bnet, BnetPacket *pkt)
 
     el = g_list_first(bnet->friends_list);
     while (el != NULL) {
-        ((BnetFriendInfo *)el->data)->tag &= ~BNET_USER_TAG_ONFRIENDLIST;
+        ((BnetFriendInfo *)el->data)->on_list = FALSE;
         el = g_list_next(el);
     }
 
@@ -3715,17 +4247,25 @@ bnet_recv_FRIENDSREMOVE(BnetConnectionData *bnet, BnetPacket *pkt)
 
     bfi = (BnetFriendInfo *) el->data;
 
-    buddy = purple_find_buddy(bnet->account, bfi->account);
+    if (bfi == NULL) {
+        // already freed (was a libpurple initiated remove), simply remove link
+        bnet->friends_list = g_list_remove_link(bnet->friends_list, el);
+        g_list_free_1(el);
+    } else {
+        // chat command initiated remove, find libpurple buddy
+        buddy = purple_find_buddy(bnet->account, bfi->account);
 
-    bnet->friends_list = g_list_remove_link(bnet->friends_list, el);
-    bnet_friend_info_free(el->data);
-    g_list_free_1(el);
+        if (buddy) {
+            // set proto data to NULL so that it doesn't /f r again.
+            purple_buddy_set_protocol_data(buddy, NULL);
+            // remove
+            purple_blist_remove_buddy(buddy);
+            // free locally
+            bnet_friend_info_free(el->data);
+        }
 
-    if (buddy) {
-        // set proto data to NULL so that it doesn't /f r again.
-        purple_buddy_set_protocol_data(buddy, NULL);
-        // remove
-        purple_blist_remove_buddy(buddy);
+        bnet->friends_list = g_list_remove_link(bnet->friends_list, el);
+        g_list_free_1(el);
     }
 }
 
@@ -3827,7 +4367,7 @@ bnet_recv_CLANINFO(BnetConnectionData *bnet, BnetPacket *pkt)
     bnet_packet_read_byte(pkt);
     clan_tag = (BnetClanTag) bnet_packet_read_dword(pkt);
     rank = (BnetClanMemberRank) bnet_packet_read_byte(pkt);
-    bnet->clan_info = bnet_clan_info_new(clan_tag, rank);
+    bnet_clan_info_join_clan(bnet->clan_info, clan_tag, rank);
 
     motd_cookie = bnet_clan_packet_register(bnet->clan_info, BNET_SID_CLANMOTD, NULL);
     bnet_send_CLANMOTD(bnet, motd_cookie);
@@ -3924,6 +4464,8 @@ bnet_recv_CLANMEMBERLIST(BnetConnectionData *bnet, BnetPacket *pkt)
 {
     guint32 cookie;
     guint8 number_of_members;
+    GList *members = NULL;
+    int i;
 
     cookie = bnet_packet_read_dword(pkt);
 
@@ -3932,6 +4474,16 @@ bnet_recv_CLANMEMBERLIST(BnetConnectionData *bnet, BnetPacket *pkt)
     number_of_members = bnet_packet_read_byte(pkt);
 
     purple_debug_info("bnet", "Clan members: %d\n", number_of_members);
+
+    for (i = 0; i < number_of_members; i++) {
+        gchar *name = bnet_packet_read_cstring(pkt);
+        BnetClanMemberRank rank = bnet_packet_read_byte(pkt);
+        BnetClanMemberStatus status = bnet_packet_read_byte(pkt);
+        gchar *location = bnet_packet_read_cstring(pkt);
+        BnetClanMember *member = bnet_clan_member_new(name, rank, status, location);
+        members = g_list_append(members, member);
+    }
+    bnet_clan_info_set_members(bnet->clan_info, members);
 }
 
 static void
@@ -3950,8 +4502,101 @@ bnet_recv_CLANMEMBERRANKCHANGE(BnetConnectionData *bnet, BnetPacket *pkt)
 }
 
 static void
-bnet_recv_CLANMEMBERINFORMATION(BnetConnectionData *bnet, BnetPacket *pkt)
+bnet_recv_CLANMEMBERINFO(BnetConnectionData *bnet, BnetPacket *pkt)
 {
+    guint32 cookie;
+    BnetClanResponseCode status;
+    gchar *s_clan = NULL;
+    const gchar *s_rank = NULL;
+    gchar *s_clan_joindate = NULL;
+    gchar *clan_name = NULL;
+    BnetClanMemberRank clan_rank = BNET_CLAN_RANK_INITIATE;
+    guint64 clan_joindate = 0;
+    
+    cookie = bnet_packet_read_dword(pkt);
+    status = bnet_packet_read_byte(pkt);
+    s_clan = bnet_clan_packet_unregister(bnet->clan_info, BNET_SID_CLANMEMBERINFO, cookie);
+
+    if (s_clan == NULL) {
+        return;
+    }
+
+    switch (status) {
+        case BNET_CLAN_RESPONSE_SUCCESS:
+            clan_name = bnet_packet_read_cstring(pkt);
+            clan_rank = bnet_packet_read_byte(pkt);
+            clan_joindate = bnet_packet_read_qword(pkt);
+            break;
+        case BNET_CLAN_RESPONSE_USERNOTFOUND:
+            purple_debug_warning("bnet", "Error retrieving member info for %s: user not found in that clan\n", bnet->lookup_info_user);
+            break;
+        default:
+            purple_debug_warning("bnet", "Error retrieving member info for %s: status code 0x%02x\n", bnet->lookup_info_user, status);
+            break;
+    }
+
+    switch (clan_rank) {
+        case BNET_CLAN_RANK_CHIEFTAIN:
+            s_rank = "Chieftain";
+            break;
+        case BNET_CLAN_RANK_SHAMAN:
+            s_rank = "Shaman";
+            break;
+        case BNET_CLAN_RANK_GRUNT:
+            s_rank = "Grunt";
+            break;
+        case BNET_CLAN_RANK_PEON:
+            s_rank = "Peon";
+            break;
+        case BNET_CLAN_RANK_INITIATE:
+            s_rank = "Peon (7-day probation period)";
+            break;
+    }
+
+    s_clan_joindate = bnet_format_filetime(clan_joindate);
+
+    if (bnet->lookup_info_await & BNET_LOOKUP_INFO_AWAIT_W3_CLAN_MI) {
+        bnet->lookup_info_await &= ~BNET_LOOKUP_INFO_AWAIT_W3_CLAN_MI;
+        if (!(bnet->lookup_info_await & BNET_LOOKUP_INFO_AWAIT_CANCELLED)) {
+            //if (g_strcmp(bnet->lookup_info_user, username) == 0) { -- do this check if we use W3PROFILE for anything else
+            purple_debug_info("bnet", "Lookup complete: W3_CLAN_MI(%s, Clan %s)\n", bnet->lookup_info_user, s_clan);
+            if (!bnet->lookup_info) {
+                bnet->lookup_info = purple_notify_user_info_new();
+            } else if (!bnet->lookup_info_first_section) {
+                purple_notify_user_info_add_section_break(bnet->lookup_info);
+            }
+            bnet->lookup_info_first_section = FALSE;
+
+            purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Clan tag", s_clan);
+            if (status == BNET_CLAN_RESPONSE_SUCCESS) {
+                purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Clan name", clan_name);
+                purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Clan rank", s_rank);
+                purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Clan join date", s_clan_joindate);
+
+                if (bnet->lookup_info_await == BNET_LOOKUP_INFO_AWAIT_NONE) {
+                    purple_notify_userinfo(bnet->account->gc, bnet->lookup_info_user,
+                            bnet->lookup_info, bnet_lookup_info_close, bnet);
+                }
+            }
+
+            if (bnet->lookup_info_await == BNET_LOOKUP_INFO_AWAIT_NONE) {
+                purple_notify_userinfo(bnet->account->gc, bnet->lookup_info_user,
+                        bnet->lookup_info, bnet_lookup_info_close, bnet);
+            }
+        } else {
+            purple_debug_info("bnet", "Lookup complete: W3_CLAN_MI([freed])\n");
+        }
+    } else {
+        purple_debug_warning("bnet", "Not waiting for 0x82 SID_CLANMEMBERINFO\n");
+    }
+
+    g_free(s_clan);
+    if (clan_name != NULL) {
+        g_free(clan_name);
+    }
+    if (s_clan_joindate != NULL) {
+        g_free(s_clan_joindate);
+    }
 }
 
 static void
@@ -4012,16 +4657,10 @@ bnet_parse_telnet_line(BnetConnectionData *bnet, const gchar *line)
                     purple_debug_warning("bnet", "regex create failed: %s\n", ev_err->message);
                     g_error_free(ev_err);
                 } else if (g_regex_match(ev_regex, rest, 0, &ev_mi)) {
-                    gchar *textrev = g_malloc0(5);
                     name = g_match_info_fetch(ev_mi, 1);
                     flags_str = g_match_info_fetch(ev_mi, 2);
                     text = g_match_info_fetch(ev_mi, 3);
-                    textrev[0] = text[3];
-                    textrev[1] = text[2];
-                    textrev[2] = text[1];
-                    textrev[3] = text[0];
-                    g_free(text);
-                    text = textrev;
+                    g_strreverse(text);
                 }
                 g_match_info_free(ev_mi);
                 g_regex_unref(ev_regex);
@@ -4179,11 +4818,17 @@ bnet_parse_packet(BnetConnectionData *bnet, const guint8 packet_id, const gchar 
         case BNET_SID_CDKEY:
             bnet_recv_CDKEY(bnet, pkt);
             break;
+        case BNET_SID_W3PROFILE:
+            bnet_recv_W3PROFILE(bnet, pkt);
+            break;
         case BNET_SID_CDKEY2:
             bnet_recv_CDKEY2(bnet, pkt);
             break;
         case BNET_SID_CREATEACCOUNT2:
             bnet_recv_CREATEACCOUNT2(bnet, pkt);
+            break;
+        case BNET_SID_W3GENERAL:
+            bnet_recv_W3GENERAL(bnet, pkt);
             break;
         case BNET_SID_NEWS_INFO:
             bnet_recv_NEWS_INFO(bnet, pkt);
@@ -4272,8 +4917,8 @@ bnet_parse_packet(BnetConnectionData *bnet, const guint8 packet_id, const gchar 
         case BNET_SID_CLANMEMBERRANKCHANGE:
             bnet_recv_CLANMEMBERRANKCHANGE(bnet, pkt);
             break;
-        case BNET_SID_CLANMEMBERINFORMATION:
-            bnet_recv_CLANMEMBERINFORMATION(bnet, pkt);
+        case BNET_SID_CLANMEMBERINFO:
+            bnet_recv_CLANMEMBERINFO(bnet, pkt);
             break;
         default:
             // unhandled
@@ -4472,6 +5117,29 @@ bnet_channel_user_compare(gconstpointer a, gconstpointer b)
     return cmp;
 }
 
+static gint
+bnet_friend_user_compare(gconstpointer a, gconstpointer b)
+{
+    const BnetFriendInfo *bfi = a;
+    const char *usr = b;
+    const char *a_n = NULL;
+    const char *b_n = NULL;
+    char *a_nc;
+    int cmp = 0;
+    if (a == NULL || b == NULL) {
+        return 1;
+    }
+    if (bfi->account == NULL) {
+        return 1;
+    }
+    a_n = bnet_normalize(NULL, bfi->account);
+    a_nc = g_strdup(a_n);
+    b_n = bnet_normalize(NULL, usr);
+    cmp = strcmp(a_nc, b_n);
+    g_free(a_nc);
+    return cmp;
+}
+
 static PurpleCmdRet
 bnet_handle_cmd(PurpleConversation *conv, const gchar *cmdword,
         gchar **args, gchar **error, void *data)
@@ -4608,30 +5276,34 @@ bnet_format_time(guint64 unixtime)
 #define FILETIME_TICK 10000000LL
 #define FILETIME_TO_UNIXTIME_DIFF 11644473600LL
 static char *
-bnet_format_filetime(char *ftime_str)
+bnet_format_filetime_string(char *ftime_str)
 {
-    struct FILETIME {
-        guint32 dwHighDateTime;
-        guint32 dwLowDateTime;
-    } ft_parts; // filetime parts
-    guint64 ft; // filetime
-    guint64 ut; // unixtime
+    union {
+        struct {
+            guint32 dwLowDateTime;
+            guint32 dwHighDateTime;
+        } as_ft; // filetime parts
+        guint64 as_int64;
+    } data;
     char *space_loc; // used to parse string
 
     if (strlen(ftime_str) == 0) {
         return g_strdup("(never)");
     }
 
-    ft_parts.dwHighDateTime = (guint32)g_ascii_strtod(ftime_str, &space_loc);
-    ft_parts.dwLowDateTime = 0;
+    data.as_ft.dwHighDateTime = (guint32)g_ascii_strtod(ftime_str, &space_loc);
+    data.as_ft.dwLowDateTime = 0;
     if (space_loc != NULL) {
-        ft_parts.dwLowDateTime = (guint32)g_ascii_strtod(space_loc + 1, NULL);
+        data.as_ft.dwLowDateTime = (guint32)g_ascii_strtod(space_loc + 1, NULL);
     }
 
-    ft = (((guint64)ft_parts.dwHighDateTime) << 32) |
-        ((guint64)ft_parts.dwLowDateTime);
+    return bnet_format_filetime(data.as_int64);
+}
 
-    ut = (ft / FILETIME_TICK - FILETIME_TO_UNIXTIME_DIFF);
+static char *
+bnet_format_filetime(guint64 ft)
+{
+    guint64 ut = (ft / FILETIME_TICK - FILETIME_TO_UNIXTIME_DIFF);
 
     return bnet_format_time(ut);
 }
@@ -4650,7 +5322,7 @@ bnet_get_filetime(time_t time)
 static char *
 bnet_format_strsec(char *secs_str)
 {
-    char *days_str;
+    gchar *days_str;
 
     guint32 secs = g_ascii_strtod(secs_str, NULL);
     guint32 mins = secs / 60;
@@ -4660,14 +5332,17 @@ bnet_format_strsec(char *secs_str)
     mins %= 60;
     hrs %= 24;
 
-    if (strlen(secs_str) == 0 || secs == 0)
+    if (strlen(secs_str) == 0 || secs <= 0) {
         return g_strdup("now");
+    }
 
-    if (days == 0) days_str = "";
-    else if (days == 1) days_str = " day, ";
-    else days_str = " days, ";
+    if (days == 1) {
+        days_str = "";
+    } else {
+        days_str = "s";
+    }
 
-    return g_strdup_printf("%d%s%02d:%02d:%02d", days, days_str, hrs, mins, secs);
+    return g_strdup_printf("%d day%s, %d:%02d:%02d", days, days_str, hrs, mins, secs);
 }
 
 static void
@@ -4690,6 +5365,20 @@ bnet_find_detached_buddies(BnetConnectionData *bnet)
         el = g_slist_next(el);
     }
     g_slist_free(all_buddies);
+}
+
+static void
+bnet_do_whois(const BnetConnectionData *bnet, const char *who)
+{
+    gchar *cmd;
+
+    cmd = g_strdup_printf("/whois %s%s", bnet->d2_star, who);
+    if (bnet->emulate_telnet) {
+        bnet_send_telnet_line(bnet, cmd);
+    } else {
+        bnet_send_CHATCOMMAND(bnet, cmd);
+    }
+    g_free(cmd);
 }
 
 static void
@@ -4766,7 +5455,7 @@ bnet_friend_update(const BnetConnectionData *bnet, int index,
     if (whoising) {
         // TODO: make queue and put this as low priority
         bfi->automated_lookup = whoising;
-        bnet_whois_user(bnet, bfi->account);
+        bnet_do_whois(bnet, bfi->account);
     }
 }
 
@@ -4774,7 +5463,7 @@ static void
 bnet_close(PurpleConnection *gc)
 {
     BnetConnectionData *bnet = gc->proto_data;
-    purple_connection_set_state(gc, PURPLE_DISCONNECTED);
+    //purple_connection_set_state(gc, PURPLE_DISCONNECTED);
     if (bnet != NULL) {
         bnet->channel_first_join = FALSE;
         bnet->is_online = FALSE;
@@ -4872,7 +5561,7 @@ bnet_close(PurpleConnection *gc)
             g_free(bnet->last_sent_to);
             bnet->last_sent_to = NULL;
         }
-        bnet_whois_complete(bnet);
+        bnet_lookup_info_close(bnet);
         g_free(bnet);
         bnet = NULL;
     }
@@ -4963,425 +5652,108 @@ bnet_send_whisper(PurpleConnection *gc, const char *who,
  * @a who's user info.
  */
 static void
-bnet_get_info(PurpleConnection *gc, const char *who)
+bnet_lookup_info(PurpleConnection *gc, const char *who)
 {
     BnetConnectionData *bnet = gc->proto_data;
     const char *norm = bnet_normalize(bnet->account, who);
-    bnet->lookup_user = g_strdup(norm);
-    if (!bnet_channeldata_user(bnet, bnet->lookup_user)) {
-        bnet_whois_user(bnet, bnet->lookup_user);
+
+    if (bnet->lookup_info_user != NULL) {
+        g_free(bnet->lookup_info_user);
     }
-    if (!bnet->emulate_telnet) {
-        bnet_profiledata_user(bnet, bnet->lookup_user);
+    if (bnet->lookup_info != NULL) {
+        purple_notify_user_info_destroy(bnet->lookup_info);
+    }
+    // see these fields in bnet.h for what they mean
+    bnet->lookup_info = purple_notify_user_info_new();
+    bnet->lookup_info_user = g_strdup(norm);
+    bnet->lookup_info_first_section = TRUE;
+    bnet->lookup_info_got_locprod = FALSE;
+    bnet->lookup_info_found_clan = FALSE;
+    bnet->lookup_info_clan = (BnetClanTag)0;
+    bnet->lookup_info_await = BNET_LOOKUP_INFO_AWAIT_NONE;
+
+    // show user info
+    // step 1: get data from channel list (stored in bnet->channel_users)
+    bnet_lookup_info_cached_channel(bnet);
+
+    // step 2: get data from friends list (stored in bnet->friends_list)
+    bnet_lookup_info_cached_friends(bnet);
+
+    // step 2: do a /whois (await EID_INFO response)
+    // PRECOND: must not have gotten location and product information from channel or friend list
+    if (!bnet->lookup_info_got_locprod) {
+        bnet_lookup_info_whois(bnet);
+    }
+
+    // step 3...: get data from profile
+    if (bnet_is_w3(bnet)) {
+        // step 3a (W3): get user data we won't get via SID_W3PROFILE: profile\sex, system\*...
+        bnet_lookup_info_user_data(bnet);
+
+        // step 4: get data from clan member list (stored in bnet->clan_member_list)
+        bnet_lookup_info_cached_clan(bnet);
+
+        // step 5: get W3 stats (await SID_WARCRAFTGENERAL.WID_USERRESPONSE response)
+        bnet_lookup_info_w3_user_stats(bnet);
+
+        // step 6a: get clan tag then we can optionally get clan stats and clan member join date later
+        // PRECOND: must not have "found" clan tag
+        if (!bnet->lookup_info_found_clan) {
+            // step 6a.1: get clan tag from W3 profile (await SID_W3PROFILE response)
+            bnet_lookup_info_w3_user_profile(bnet);
+            // to do on receiving SID_W3PROFILE...
+            // step 6a.2: get clan stats (await SID_WARCRAFTGENERAL.WID_CLANRECORD response)
+            // bnet_lookup_info_w3_clan_stats(bnet);
+            // step 6a.3: get clan member join date (await SID_CLANMEMBERINFO response)
+            // bnet_lookup_info_w3_clan_mi(bnet);
+        }
+        // step 6b: get clan stats and clan member join date now
+        // PRECOND: must have "found" clan tag and it is not 0
+        else if (bnet->lookup_info_clan != (BnetClanTag)0) {
+            // step 6b.1: get clan stats (await SID_WARCRAFTGENERAL.WID_CLANRECORD response)
+            bnet_lookup_info_w3_clan_stats(bnet);
+            // step 6b.2: get clan member join date (await SID_CLANMEMBERINFO response)
+            bnet_lookup_info_w3_clan_mi(bnet);
+        }
+        // step 6c: don't do anything more because we know that the user is not in a clan (as seen in channel list)
+    } else if (!bnet->emulate_telnet) {
+        // step 3b (non-W3): get user data
+        bnet_lookup_info_user_data(bnet);
+    }
+
+    if (bnet->lookup_info_await == BNET_LOOKUP_INFO_AWAIT_NONE) {
+        purple_notify_userinfo(bnet->account->gc, bnet->lookup_info_user,
+                bnet->lookup_info, bnet_lookup_info_close, bnet);
     }
 }
 
 static void
-bnet_whois_complete(gpointer user_data)
+bnet_lookup_info_close(gpointer user_data)
 {
     BnetConnectionData *bnet = (BnetConnectionData *)user_data;
-    if (bnet->lookup_user != NULL) {
-        g_free(bnet->lookup_user);
-        bnet->lookup_user = NULL;
+    if (bnet->lookup_info_user != NULL) {
+        g_free(bnet->lookup_info_user);
+        bnet->lookup_info_user = NULL;
     }
     if (bnet->lookup_info != NULL) {
         purple_notify_user_info_destroy(bnet->lookup_info);
         bnet->lookup_info = NULL;
     }
-}
-
-static void
-bnet_whois_user(const BnetConnectionData *bnet, const char *who)
-{
-    char *cmd = g_strdup_printf("/whois %s%s",
-            bnet->d2_star, who);
-    if (bnet->emulate_telnet) {
-        bnet_send_telnet_line(bnet, cmd);
-    } else {
-        bnet_send_CHATCOMMAND(bnet, cmd);
-    }
-    g_free(cmd);
-}
-
-static void
-bnet_profiledata_user(BnetConnectionData *bnet, const char *who)
-{
-    gchar *final_request;
-    BnetUserDataRequest *req;
-    BnetUserDataRequestType request_type;
-    gboolean is_self = FALSE;
-    int recordbits = 0;
-    char **keys;
-    const char *norm = bnet_normalize(bnet->account, who);
-    int request_cookie = g_str_hash(norm);
-    const char *acct_norm = bnet_account_normalize(bnet->account, norm);
-    const char *uu_norm = bnet_normalize(bnet->account, bnet->unique_username);
-
-    if (strcmp(uu_norm, acct_norm) == 0) {
-        final_request = g_strdup_printf("%s\n%s", BNET_USERDATA_PROFILE_REQUEST, BNET_USERDATA_SYSTEM_REQUEST);
-        is_self = TRUE;
-    } else {
-        final_request = g_strdup(BNET_USERDATA_PROFILE_REQUEST);
-    }
-
-    switch (bnet->game) {
-        case BNET_GAME_TYPE_SSHR:
-            recordbits = BNET_RECORD_NORMAL;
-            break;
-        case BNET_GAME_TYPE_W2BN:
-            recordbits = BNET_RECORD_NORMAL |
-                BNET_RECORD_LADDER |
-                BNET_RECORD_IRONMAN;
-            break;
-        case BNET_GAME_TYPE_STAR:
-        case BNET_GAME_TYPE_SEXP:
-        case BNET_GAME_TYPE_JSTR:
-            recordbits = BNET_RECORD_NORMAL |
-                BNET_RECORD_LADDER;
-            break;
-        case BNET_GAME_TYPE_DRTL:
-        case BNET_GAME_TYPE_DSHR:
-        case BNET_GAME_TYPE_D2DV:
-        case BNET_GAME_TYPE_D2XP:
-        case BNET_GAME_TYPE_WAR3:
-        case BNET_GAME_TYPE_W3XP:
-            recordbits = BNET_RECORD_NONE;
-            break;
-    }
-
-    if (recordbits & BNET_RECORD_NORMAL) {
-        char *product_id = bnet_get_product_id_str(bnet->product_id);
-        char *request_part = g_strdup_printf(BNET_USERDATA_RECORD_REQUEST(product_id, BNET_USERDATA_RECORD_NORMAL));
-        char *request_combined = g_strdup_printf("%s\n%s", final_request, request_part);
-        g_free(final_request);
-        final_request = request_combined;
-        g_free(product_id);
-        g_free(request_part);
-    }
-
-    if (recordbits & BNET_RECORD_LADDER) {
-        char *product_id = bnet_get_product_id_str(bnet->product_id);
-        char *request_part = g_strdup_printf(BNET_USERDATA_RECORD_LADDER_REQUEST(product_id, BNET_USERDATA_RECORD_LADDER));
-        char *request_combined = g_strdup_printf("%s\n%s", final_request, request_part);
-        g_free(final_request);
-        final_request = request_combined;
-        g_free(product_id);
-        g_free(request_part);
-    }
-
-    if (recordbits & BNET_RECORD_IRONMAN) {
-        char *product_id = bnet_get_product_id_str(bnet->product_id);
-        char *request_part = g_strdup_printf(BNET_USERDATA_RECORD_LADDER_REQUEST(product_id, BNET_USERDATA_RECORD_IRONMAN));
-        char *request_combined = g_strdup_printf("%s\n%s", final_request, request_part);
-        g_free(final_request);
-        final_request = request_combined;
-        g_free(product_id);
-        g_free(request_part);
-    }
-
-    keys = g_strsplit(final_request, "\n", -1);
-
-    request_type = BNET_READUSERDATA_REQUEST_PROFILE |
-        ((is_self) ? BNET_READUSERDATA_REQUEST_SYSTEM : 0) |
-        ((recordbits == BNET_RECORD_NONE) ? 0 : BNET_READUSERDATA_REQUEST_RECORD);
-
-    req = bnet_userdata_request_new(request_cookie, request_type,
-            acct_norm, keys,
-            bnet->product_id);
-
-    bnet->userdata_requests = g_list_append(bnet->userdata_requests, req);
-
-    bnet_send_READUSERDATA(bnet, request_cookie, acct_norm, keys);
-
-    g_free(final_request);
-}
-
-static void
-bnet_action_set_motd_cb(gpointer data)
-{
-    BnetConnectionData *bnet;
-    PurpleRequestFields *fields;
-    GList *group_list; PurpleRequestFieldGroup *group;
-    GList *field_list; PurpleRequestField *field;
-    const char *motd;
-
-    bnet = data;
-    if (bnet == NULL) return;
-    fields = bnet->set_motd_fields;
-    if (fields == NULL) return;
-    group_list = g_list_first(purple_request_fields_get_groups(fields));
-    if (group_list == NULL) return;
-    group = group_list->data; // only one group
-    if (group == NULL) return;
-    field_list = g_list_first(purple_request_field_group_get_fields(group));
-    if (field_list == NULL) return;
-    field = field_list->data; // only one field
-    motd = purple_request_field_string_get_value(field);
-
-    bnet_send_CLANSETMOTD(bnet, 0xbaadf00du, motd);
-}
-
-static gint
-bnet_news_item_sort(gconstpointer a, gconstpointer b)
-{
-    const BnetNewsItem *news_a = a;
-    const BnetNewsItem *news_b = b;
-    if (news_a->timestamp == 0) {
-        if (news_b->timestamp == 0) {
-            return 0;
-        }
-        return -1;
-    } else if (news_b->timestamp == 0) {
-        return 1;
-    }
-
-    return news_b->timestamp - news_a->timestamp;
-}
-
-static void
-bnet_action_show_news(PurplePluginAction *action)
-{
-    PurpleConnection *gc = action->context;
-    BnetConnectionData *bnet = gc->proto_data;
-    GList *el = NULL;
-    gchar *formatted = g_malloc0(1);
-
-    if (bnet->news != NULL) {
-        bnet->news = g_list_sort(bnet->news, bnet_news_item_sort);
-
-        el = g_list_first(bnet->news);
-        do {
-            BnetNewsItem *item = el->data;
-            gchar *add = NULL;
-            gchar *sum = NULL;
-            gchar *msgbody = bnet_locale_to_utf8(item->message);
-            gchar *msgbody_esc = bnet_escape_text(msgbody, -1, TRUE);
-            if (item->timestamp == 0) {
-                add = g_strdup_printf("<b>Message of the Day</b><br>%s<br><br>", msgbody_esc);
-            } else {
-                gchar *tm = bnet_format_time(item->timestamp);
-                add = g_strdup_printf("<b>%s</b><br>%s<br><br>", tm, msgbody_esc);
-                g_free(tm);
-            }
-            sum = g_strdup_printf("%s%s", formatted, add);
-            g_free(add);
-            g_free(formatted);
-            g_free(msgbody);
-            g_free(msgbody_esc);
-            formatted = sum;
-
-            el = g_list_next(el);
-        } while (el != NULL);
-    }
-
-    if (strlen(formatted) == 0) {
-        g_free(formatted);
-        formatted = g_strdup("<i>No news returned.</i>");
-    }
-    purple_notify_formatted(bnet->account->gc, "Battle.net News",
-            "News for this Battle.net server.", NULL, formatted, NULL, NULL);
-
-    g_free(formatted);
-}
-
-static void
-bnet_action_set_motd(PurplePluginAction *action)
-{
-    PurpleConnection *gc = action->context;
-    BnetConnectionData *bnet = gc->proto_data;
-    PurpleRequestField *field = NULL;
-    PurpleRequestFields *fields = NULL;
-    PurpleRequestFieldGroup *group = NULL;
-    BnetClanMemberRank my_rank = 0;
-    BnetClanTag tag = 0;
-    gchar *group_name = NULL;
-    gchar *tag_string = NULL;
-    gchar *current_motd = NULL;
-
-    if (bnet == NULL) return;
-    if (bnet->clan_info == NULL) return;
-
-    my_rank = bnet_clan_info_get_my_rank(bnet->clan_info);
-
-    if (my_rank != BNET_CLAN_RANK_SHAMAN &&
-            my_rank != BNET_CLAN_RANK_CHIEFTAIN) return;
-
-    tag = bnet_clan_info_get_tag(bnet->clan_info);
-    tag_string = bnet_clan_tag_to_string(tag);
-
-    current_motd = bnet_clan_info_get_motd(bnet->clan_info);
-
-    fields = purple_request_fields_new();
-    group_name = g_strdup_printf("Set clan MOTD for Clan %s", tag_string);
-    group = purple_request_field_group_new(group_name);
-
-    field = purple_request_field_string_new("motd", "Message of the Day", current_motd, FALSE);
-    purple_request_field_string_set_editable(field, TRUE);
-    purple_request_field_set_required(field, TRUE);
-    purple_request_field_string_set_value(field, current_motd);
-    purple_request_field_group_add_field(group, field);
-
-    purple_request_fields_add_group(fields, group);
-
-    bnet->set_motd_fields = fields;
-
-    purple_request_fields(gc, "Edit Clan MOTD", "Change this WarCraft III clan's MOTD.", NULL, fields,
-            "Save", (GCallback)bnet_action_set_motd_cb, "Cancel", NULL,
-            bnet->account, NULL, NULL, bnet);
-
-    g_free(tag_string);
-    g_free(group_name);
-}
-
-static void
-bnet_action_set_user_data(PurplePluginAction *action)
-{
-    PurpleConnection *gc = action->context;
-    BnetConnectionData *bnet = gc->proto_data;
-
-    if (bnet == NULL) return;
-
-    bnet_profile_get_for_edit(bnet);
-}
-
-static void
-bnet_profile_get_for_edit(BnetConnectionData *bnet)
-{
-    const char *uu_norm = bnet_normalize(bnet->account, bnet->unique_username);
-    int request_cookie = g_str_hash(uu_norm);
-    BnetUserDataRequest *req;
-    char **keys;
-
-    keys = g_strsplit(BNET_USERDATA_PROFILE_REQUEST, "\n", -1);
-
-    bnet->writing_profile = TRUE;
-
-    req = bnet_userdata_request_new(request_cookie, BNET_READUSERDATA_REQUEST_PROFILE,
-            bnet->unique_username, keys, bnet->product_id);
-
-    bnet->userdata_requests = g_list_append(bnet->userdata_requests, req);
-
-    bnet_send_READUSERDATA(bnet, request_cookie, bnet->unique_username, keys);
-}
-
-static void
-bnet_profile_show_write_dialog(BnetConnectionData *bnet,
-        const char *psex, const char *page, const char *ploc, const char *pdescr)
-{
-    PurpleRequestField *field;
-    PurpleRequestFields *fields = purple_request_fields_new();
-    gchar *group_name = g_strdup_printf("Change profile information for %s", bnet->username);
-    PurpleRequestFieldGroup *group = purple_request_field_group_new(group_name);
-
-    field = purple_request_field_string_new("profile\\sex", "Sex", psex, FALSE);
-    purple_request_field_group_add_field(group, field);
-    purple_request_field_string_set_editable(field, TRUE);
-    purple_request_field_set_required(field, FALSE);
-    purple_request_field_string_set_value(field, psex);
-
-    /*field = purple_request_field_string_new("profile\\age", "Age", page, FALSE);
-      purple_request_field_string_set_editable(field, FALSE);
-      purple_request_field_set_required(field, FALSE);
-      purple_request_field_string_set_value(field, page);
-      purple_request_field_group_add_field(group, field);*/
-
-    field = purple_request_field_string_new("profile\\location", "Location", ploc, FALSE);
-    purple_request_field_group_add_field(group, field);
-    purple_request_field_string_set_editable(field, TRUE);
-    purple_request_field_set_required(field, FALSE);
-    purple_request_field_string_set_value(field, ploc);
-
-    field = purple_request_field_string_new("profile\\description", "Description", pdescr, TRUE);
-    purple_request_field_group_add_field(group, field);
-    purple_request_field_string_set_editable(field, TRUE);
-    purple_request_field_set_required(field, FALSE);
-    purple_request_field_string_set_value(field, pdescr);
-
-    purple_request_fields_add_group(fields, group);
-
-    bnet->profile_write_fields = fields;
-
-    bnet->writing_profile = FALSE;
-
-    purple_request_fields(bnet->account->gc,
-            "Edit Profile",
-            NULL, NULL,
-            fields,
-            "_Save", (GCallback)bnet_profile_write_cb,
-            "_Cancel", NULL,
-            bnet->account,
-            NULL, NULL,
-            bnet);
-}
-
-static void
-bnet_profile_write_cb(gpointer data)
-{
-    BnetConnectionData *bnet;
-    PurpleRequestFields *fields;
-    GList *group_list; PurpleRequestFieldGroup *group;
-    GList *field_list; PurpleRequestField *field;
-    const char *s_const = "";
-    const char *sex = s_const;
-    const char *age = s_const;
-    const char *location = s_const;
-    const char *description = s_const;
-    const char *field_id;
-
-    bnet = data;
-    if (bnet == NULL) return;
-    fields = bnet->profile_write_fields;
-    if (fields == NULL) return;
-    group_list = g_list_first(purple_request_fields_get_groups(fields));
-    if (group_list == NULL) return;
-    group = group_list->data; // only one group
-    if (group == NULL) return;
-    field_list = g_list_first(purple_request_field_group_get_fields(group));
-
-    while (field_list != NULL) {
-        field = field_list->data;
-        field_id = purple_request_field_get_id(field);
-        if (strcmp(field_id, "profile\\sex") == 0) {
-            sex = purple_request_field_string_get_value(field);
-            if (sex == NULL) {
-                sex = s_const;
-            }
-        } else if (strcmp(field_id, "profile\\age") == 0) {
-            age = purple_request_field_string_get_value(field);
-            if (age == NULL) {
-                age = s_const;
-            }
-        } else if (strcmp(field_id, "profile\\location") == 0) {
-            location = purple_request_field_string_get_value(field);
-            if (location == NULL) {
-                location = s_const;
-            }
-        } else if (strcmp(field_id, "profile\\description") == 0) {
-            description = purple_request_field_string_get_value(field);
-            if (description == NULL) {
-                description = s_const;
-            }
-        }
-        field_list = g_list_next(field_list);
-    }
-
-    if (sex != s_const ||
-        age != s_const ||
-        location != s_const ||
-        description == s_const) {
-        bnet_send_WRITEUSERDATA(bnet, sex, age, location, description);
-    }
+    purple_debug_info("bnet", "Lookup closed by user\n");
+    bnet->lookup_info_await |= BNET_LOOKUP_INFO_AWAIT_CANCELLED;
 }
 
 static gboolean
-bnet_channeldata_user(BnetConnectionData *bnet, const char *who)
+bnet_lookup_info_cached_channel(BnetConnectionData *bnet)
 {
+    gchar *who = bnet->lookup_info_user;
     GList *li = g_list_find_custom(bnet->channel_users, who, bnet_channel_user_compare);
     BnetChannelUser *bcu;
     char *s_ping;
     char *s_caps = g_malloc0(1);
     BnetProductID product_id;
     char *product;
+    char *location_string;
     //char *s_stats;
 
     char *start; char *loc;
@@ -5389,18 +5761,16 @@ bnet_channeldata_user(BnetConnectionData *bnet, const char *who)
     //guint32 icon_id; - assigned but not used
     char *s_clan;
 
-    if (li == NULL)
+    if (li == NULL) {
+        // the user was not in our channel
         return FALSE;
+    }
+
+    purple_debug_info("bnet", "Lookup: CHANNEL_LIST(%s)\n", who);
 
     bcu = li->data;
 
     s_ping = g_strdup_printf("%dms", bcu->ping);
-
-    if (!bnet->lookup_info) {
-        bnet->lookup_info = purple_notify_user_info_new();
-    } else {
-        purple_notify_user_info_add_section_break(bnet->lookup_info);
-    }
 
     if (bcu->flags & BNET_USER_FLAG_BLIZZREP) {
         char *tmp = g_strdup("Blizzard Representative");
@@ -5462,16 +5832,26 @@ bnet_channeldata_user(BnetConnectionData *bnet, const char *who)
         s_caps = tmp;
     }
 
-    product_id = *((guint32 *)(void *)bcu->stats_data);
+    product_id = bnet_clan_string_to_tag(bcu->stats_data);
     product = bnet_get_product_name(product_id);
 
-    purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Current location", bnet->channel_name);
+    location_string = bnet_get_location_text(BNET_FRIEND_LOCATION_CHANNEL, bnet->channel_name);
+
+    if (!bnet->lookup_info) {
+        bnet->lookup_info = purple_notify_user_info_new();
+    } else if (!bnet->lookup_info_first_section) {
+        purple_notify_user_info_add_section_break(bnet->lookup_info);
+    }
+    bnet->lookup_info_first_section = FALSE;
+
+    purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Current location", location_string);
     purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Current product", product);
     purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Ping at logon", s_ping);
     purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Channel capabilities", s_caps);
 
     start = g_strdup(bcu->stats_data + 4);
     loc = start;
+    bnet->lookup_info_found_clan = TRUE;
     switch (product_id) {
         case BNET_PRODUCT_STAR:
         case BNET_PRODUCT_SEXP:
@@ -5715,22 +6095,28 @@ bnet_channeldata_user(BnetConnectionData *bnet, const char *who)
             {
                 char *tmp;
                 guint32 level = 0;
-                int i, clan_len;
+                int clan_len;
+
+                bnet->lookup_info_found_clan = FALSE;
                 if (strlen(loc)) {
                     loc++;
                     //icon_id = *((guint32 *)loc);
                     loc += 5;
                     level = g_ascii_strtod(loc, &loc);
 
+                    // note: we only can say we "found" whether the user is in a clan if the user has
+                    // a statstring. if they do not, then we do not know!
+                    bnet->lookup_info_found_clan = TRUE;
                     if (strlen(loc)) {
                         loc++;
                         clan_len = strlen(loc);
                         s_clan = g_malloc0(5);
-                        for (i = 0; i < clan_len && i < 4; i++) {
-                            s_clan[i] = loc[clan_len - i - 1];
-                        }
+                        bnet->lookup_info_clan = (BnetClanTag)0;
+                        g_memmove(s_clan, loc, clan_len);
+                        bnet->lookup_info_clan = bnet_clan_string_to_tag(s_clan);
+                        g_free(s_clan);
                     } else {
-                        s_clan = g_malloc0(1);
+                        bnet->lookup_info_clan = (BnetClanTag)0;
                     }
 
                     if (level) {
@@ -5738,23 +6124,560 @@ bnet_channeldata_user(BnetConnectionData *bnet, const char *who)
                         purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Warcraft III level", tmp);
                         g_free(tmp);
                     }
-                    if (strlen(s_clan)) {
-                        purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Warcraft III clan", s_clan);
-                    }
-                    g_free(s_clan);
                 }
                 break;
             }
     }
 
     g_free(start);
+    g_free(location_string);
 
+    bnet->lookup_info_got_locprod = TRUE;
 
-    purple_notify_userinfo(bnet->account->gc, who,
-            bnet->lookup_info, bnet_whois_complete, bnet);
+//    purple_notify_userinfo(bnet->account->gc, who,
+//            bnet->lookup_info, bnet_lookup_info_close, bnet);
+
+    purple_debug_info("bnet", "Lookup complete: CHANNEL_LIST(%s)\n", who);
 
     return TRUE;
 }
+
+static gboolean
+bnet_lookup_info_cached_friends(BnetConnectionData *bnet)
+{
+    GList *li = g_list_find_custom(bnet->friends_list, bnet->lookup_info_user, bnet_friend_user_compare);
+    BnetFriendInfo *bfi;
+
+    if (li == NULL) {
+        // the user was not on our friends list
+        return FALSE;
+    }
+
+    purple_debug_info("bnet", "Lookup: FRIENDS_LIST(%s)\n", bnet->lookup_info_user);
+
+    bfi = li->data;
+
+    if (!bnet->lookup_info) {
+        bnet->lookup_info = purple_notify_user_info_new();
+    } else if (!bnet->lookup_info_first_section) {
+        purple_notify_user_info_add_section_break(bnet->lookup_info);
+    }
+    bnet->lookup_info_first_section = FALSE;
+
+    purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Mutual friend",
+            (bfi->status & BNET_FRIEND_STATUS_MUTUAL) ? "Yes" : "No");
+
+    if (!bnet->lookup_info_got_locprod) {
+        gchar *location_text = bnet_get_location_text(bfi->location, bfi->location_name);
+        purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Current location", location_text);
+        g_free(location_text);
+        if (bfi->location != BNET_FRIEND_LOCATION_OFFLINE) {
+            purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Current product", bnet_get_product_name(bfi->product));
+        }
+    }
+    if (bfi->status & BNET_FRIEND_STATUS_DND) {
+        purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Do Not Disturb", bfi->dnd_stored_status);
+    }
+    if (bfi->status & BNET_FRIEND_STATUS_AWAY) {
+        purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, "Away", bfi->away_stored_status);
+    }
+
+    bnet->lookup_info_got_locprod = TRUE;
+
+//    purple_notify_userinfo(bnet->account->gc, bnet->lookup_info_user,
+//            bnet->lookup_info, bnet_lookup_info_close, bnet);
+
+    purple_debug_info("bnet", "Lookup complete: FRIENDS_LIST(%s)\n", bnet->lookup_info_user);
+
+    return TRUE;
+}
+
+static gboolean
+bnet_lookup_info_cached_clan(BnetConnectionData *bnet)
+{
+    const BnetClanMember *bcmi = NULL;
+    BnetClanTag clan_tag;
+    gchar *s_clan = NULL;
+    
+    if (bnet_clan_info_get_tag(bnet->clan_info) == 0) {
+        return FALSE;
+    }
+
+    bcmi = bnet_clan_info_get_member(bnet->clan_info, bnet->lookup_info_user);
+    clan_tag = bnet_clan_info_get_tag(bnet->clan_info);
+    s_clan = bnet_clan_tag_to_string(clan_tag);
+
+    if (bcmi == NULL) {
+        return FALSE;
+    }
+
+    bnet->lookup_info_found_clan = TRUE;
+    bnet->lookup_info_clan = clan_tag;
+
+    purple_debug_info("bnet", "Lookup: W3_CLAN_LIST(%s, Clan %s)\n", bnet->lookup_info_user, s_clan);
+
+//    if (!bnet->lookup_info) {
+//        bnet->lookup_info = purple_notify_user_info_new();
+//    } else if (!bnet->lookup_info_first_section) {
+//        purple_notify_user_info_add_section_break(bnet->lookup_info);
+//    }
+//    bnet->lookup_info_first_section = FALSE;
+
+//    purple_notify_userinfo(bnet->account->gc, bnet->lookup_info_user,
+//            bnet->lookup_info, bnet_lookup_info_close, bnet);
+
+    purple_debug_info("bnet", "Lookup complete: W3_CLAN_LIST(%s, Clan %s)\n", bnet->lookup_info_user, s_clan);
+
+    g_free(s_clan);
+
+    return TRUE;
+}
+
+static void
+bnet_lookup_info_whois(BnetConnectionData *bnet)
+{
+    gchar *who = bnet->lookup_info_user;
+
+    bnet->lookup_info_await |= BNET_LOOKUP_INFO_AWAIT_WHOIS;
+    purple_debug_info("bnet", "Lookup: WHOIS(%s)\n", who);
+
+    bnet_do_whois(bnet, who);
+}
+
+static void
+bnet_lookup_info_user_data(BnetConnectionData *bnet)
+{
+    gchar *who = bnet->lookup_info_user;
+    gchar *final_request;
+    BnetUserDataRequest *req;
+    BnetUserDataRequestType request_type;
+    gboolean is_self = FALSE;
+    int recordbits = 0;
+    char **keys;
+    const char *norm = bnet_normalize(bnet->account, who);
+    int request_cookie = g_str_hash(norm);
+    const char *acct_norm = bnet_account_normalize(bnet->account, norm);
+    const char *uu_norm = bnet_normalize(bnet->account, bnet->unique_username);
+
+    bnet->lookup_info_await |= BNET_LOOKUP_INFO_AWAIT_USER_DATA;
+    purple_debug_info("bnet", "Lookup: USER_DATA(%s)\n", who);
+
+    if (strcmp(uu_norm, acct_norm) == 0) {
+        final_request = g_strdup_printf("%s\n%s", BNET_USERDATA_PROFILE_REQUEST, BNET_USERDATA_SYSTEM_REQUEST);
+        is_self = TRUE;
+    } else {
+        final_request = g_strdup(BNET_USERDATA_PROFILE_REQUEST);
+    }
+
+    switch (bnet->game) {
+        case BNET_GAME_TYPE_SSHR:
+            recordbits = BNET_RECORD_NORMAL;
+            break;
+        case BNET_GAME_TYPE_W2BN:
+            recordbits = BNET_RECORD_NORMAL |
+                BNET_RECORD_LADDER |
+                BNET_RECORD_IRONMAN;
+            break;
+        case BNET_GAME_TYPE_STAR:
+        case BNET_GAME_TYPE_SEXP:
+        case BNET_GAME_TYPE_JSTR:
+            recordbits = BNET_RECORD_NORMAL |
+                BNET_RECORD_LADDER;
+            break;
+        case BNET_GAME_TYPE_DRTL:
+        case BNET_GAME_TYPE_DSHR:
+        case BNET_GAME_TYPE_D2DV:
+        case BNET_GAME_TYPE_D2XP:
+        case BNET_GAME_TYPE_WAR3:
+        case BNET_GAME_TYPE_W3XP:
+            recordbits = BNET_RECORD_NONE;
+            break;
+    }
+
+    if (recordbits & BNET_RECORD_NORMAL) {
+        char *product_id = bnet_get_product_id_str(bnet->product_id);
+        char *request_part = g_strdup_printf(BNET_USERDATA_RECORD_REQUEST(product_id, BNET_USERDATA_RECORD_NORMAL));
+        char *request_combined = g_strdup_printf("%s\n%s", final_request, request_part);
+        g_free(final_request);
+        final_request = request_combined;
+        g_free(product_id);
+        g_free(request_part);
+    }
+
+    if (recordbits & BNET_RECORD_LADDER) {
+        char *product_id = bnet_get_product_id_str(bnet->product_id);
+        char *request_part = g_strdup_printf(BNET_USERDATA_RECORD_LADDER_REQUEST(product_id, BNET_USERDATA_RECORD_LADDER));
+        char *request_combined = g_strdup_printf("%s\n%s", final_request, request_part);
+        g_free(final_request);
+        final_request = request_combined;
+        g_free(product_id);
+        g_free(request_part);
+    }
+
+    if (recordbits & BNET_RECORD_IRONMAN) {
+        char *product_id = bnet_get_product_id_str(bnet->product_id);
+        char *request_part = g_strdup_printf(BNET_USERDATA_RECORD_LADDER_REQUEST(product_id, BNET_USERDATA_RECORD_IRONMAN));
+        char *request_combined = g_strdup_printf("%s\n%s", final_request, request_part);
+        g_free(final_request);
+        final_request = request_combined;
+        g_free(product_id);
+        g_free(request_part);
+    }
+
+    keys = g_strsplit(final_request, "\n", -1);
+
+    request_type = BNET_READUSERDATA_REQUEST_PROFILE |
+        ((is_self) ? BNET_READUSERDATA_REQUEST_SYSTEM : 0) |
+        ((recordbits == BNET_RECORD_NONE) ? 0 : BNET_READUSERDATA_REQUEST_RECORD);
+
+    req = bnet_userdata_request_new(request_cookie, request_type,
+            acct_norm, keys,
+            bnet->product_id);
+
+    bnet->userdata_requests = g_list_append(bnet->userdata_requests, req);
+
+    bnet_send_READUSERDATA(bnet, request_cookie, acct_norm, keys);
+
+    g_free(final_request);
+}
+
+static void
+bnet_lookup_info_w3_user_profile(BnetConnectionData *bnet)
+{
+    gchar *username = bnet->lookup_info_user;
+    guint32 cookie;
+
+    bnet->lookup_info_await |= BNET_LOOKUP_INFO_AWAIT_W3_USER_PROFILE;
+    purple_debug_info("bnet", "Lookup: W3_USER_PROFILE(%s)\n", username);
+    
+    cookie = bnet_clan_packet_register(bnet->clan_info, BNET_SID_W3PROFILE, g_strdup(username));
+
+    bnet_send_W3PROFILE(bnet, cookie, username);
+}
+
+static void
+bnet_lookup_info_w3_user_stats(BnetConnectionData *bnet)
+{
+    gchar *username = bnet->lookup_info_user;
+    guint32 cookie;
+
+    bnet->lookup_info_await |= BNET_LOOKUP_INFO_AWAIT_W3_USER_STATS;
+    purple_debug_info("bnet", "Lookup: W3_USER_STATS(%s)\n", bnet->lookup_info_user);
+
+    cookie = bnet_clan_packet_register(bnet->clan_info, BNET_SID_W3GENERAL, g_strdup(username));
+
+    bnet_send_W3GENERAL_USERRECORD(bnet, cookie, username, bnet->product_id);
+}
+
+static void
+bnet_lookup_info_w3_clan_stats(BnetConnectionData *bnet)
+{
+    gchar *s_clan = bnet_clan_tag_to_string(bnet->lookup_info_clan);
+    guint32 cookie;
+
+    bnet->lookup_info_await |= BNET_LOOKUP_INFO_AWAIT_W3_CLAN_STATS;
+    purple_debug_info("bnet", "Lookup: W3_CLAN_STATS(Clan %s)\n", s_clan);
+
+    cookie = bnet_clan_packet_register(bnet->clan_info, BNET_SID_W3GENERAL, s_clan);
+
+    bnet_send_W3GENERAL_CLANRECORD(bnet, cookie, bnet->lookup_info_clan, bnet->product_id);
+}
+
+static void
+bnet_lookup_info_w3_clan_mi(BnetConnectionData *bnet)
+{
+    gchar *s_clan = bnet_clan_tag_to_string(bnet->lookup_info_clan);
+    gchar *username = bnet->lookup_info_user;
+    guint32 cookie;
+
+    bnet->lookup_info_await |= BNET_LOOKUP_INFO_AWAIT_W3_CLAN_MI;
+    purple_debug_info("bnet", "Lookup: W3_CLAN_MI(%s, Clan %s)\n", bnet->lookup_info_user, s_clan);
+
+    cookie = bnet_clan_packet_register(bnet->clan_info, BNET_SID_CLANMEMBERINFO, s_clan);
+
+    bnet_send_CLANMEMBERINFO(bnet, cookie, bnet->lookup_info_clan, username);
+}
+
+static void
+bnet_action_set_motd_cb(gpointer data)
+{
+    BnetConnectionData *bnet;
+    PurpleRequestFields *fields;
+    GList *group_list; PurpleRequestFieldGroup *group;
+    GList *field_list; PurpleRequestField *field;
+    const char *motd;
+
+    bnet = data;
+    if (bnet == NULL) return;
+    fields = bnet->set_motd_fields;
+    if (fields == NULL) return;
+    group_list = g_list_first(purple_request_fields_get_groups(fields));
+    if (group_list == NULL) return;
+    group = group_list->data; // only one group
+    if (group == NULL) return;
+    field_list = g_list_first(purple_request_field_group_get_fields(group));
+    if (field_list == NULL) return;
+    field = field_list->data; // only one field
+    motd = purple_request_field_string_get_value(field);
+
+    bnet_send_CLANSETMOTD(bnet, 0xbaadf00du, motd);
+}
+
+static gint
+bnet_news_item_sort(gconstpointer a, gconstpointer b)
+{
+    const BnetNewsItem *news_a = a;
+    const BnetNewsItem *news_b = b;
+    if (news_a->timestamp == 0) {
+        if (news_b->timestamp == 0) {
+            return 0;
+        }
+        return -1;
+    } else if (news_b->timestamp == 0) {
+        return 1;
+    }
+
+    return news_b->timestamp - news_a->timestamp;
+}
+
+static void
+bnet_action_show_news(PurplePluginAction *action)
+{
+    PurpleConnection *gc = action->context;
+    BnetConnectionData *bnet = gc->proto_data;
+    GList *el = NULL;
+    gchar *formatted = g_malloc0(1);
+
+    if (bnet->news != NULL) {
+        bnet->news = g_list_sort(bnet->news, bnet_news_item_sort);
+
+        el = g_list_first(bnet->news);
+        do {
+            BnetNewsItem *item = el->data;
+            gchar *add = NULL;
+            gchar *sum = NULL;
+            gchar *msgbody = bnet_locale_to_utf8(item->message);
+            gchar *msgbody_esc = bnet_escape_text(msgbody, -1, TRUE);
+            if (item->timestamp == 0) {
+                add = g_strdup_printf("<b>Message of the Day</b><br>%s<br><br>", msgbody_esc);
+            } else {
+                gchar *tm = bnet_format_time(item->timestamp);
+                add = g_strdup_printf("<b>%s</b><br>%s<br><br>", tm, msgbody_esc);
+                g_free(tm);
+            }
+            sum = g_strdup_printf("%s%s", formatted, add);
+            g_free(add);
+            g_free(formatted);
+            g_free(msgbody);
+            g_free(msgbody_esc);
+            formatted = sum;
+
+            el = g_list_next(el);
+        } while (el != NULL);
+    }
+
+    if (strlen(formatted) == 0) {
+        g_free(formatted);
+        formatted = g_strdup("<i>No news returned.</i>");
+    }
+    purple_notify_formatted(bnet->account->gc, "Battle.net News",
+            "News for this Battle.net server.", NULL, formatted, NULL, NULL);
+
+    g_free(formatted);
+}
+
+static void
+bnet_action_set_motd(PurplePluginAction *action)
+{
+    PurpleConnection *gc = action->context;
+    BnetConnectionData *bnet = gc->proto_data;
+    PurpleRequestField *field = NULL;
+    PurpleRequestFields *fields = NULL;
+    PurpleRequestFieldGroup *group = NULL;
+    BnetClanMemberRank my_rank = 0;
+    BnetClanTag tag = 0;
+    gchar *group_name = NULL;
+    gchar *tag_string = NULL;
+    gchar *current_motd = NULL;
+
+    if (bnet == NULL) return;
+    if (bnet->emulate_telnet) return;
+    if (bnet_clan_info_get_tag(bnet->clan_info) == 0) return;
+
+    my_rank = bnet_clan_info_get_my_rank(bnet->clan_info);
+
+    if (my_rank != BNET_CLAN_RANK_SHAMAN &&
+            my_rank != BNET_CLAN_RANK_CHIEFTAIN) return;
+
+    tag = bnet_clan_info_get_tag(bnet->clan_info);
+    tag_string = bnet_clan_tag_to_string(tag);
+
+    current_motd = bnet_clan_info_get_motd(bnet->clan_info);
+
+    fields = purple_request_fields_new();
+    group_name = g_strdup_printf("Set clan MOTD for Clan %s", tag_string);
+    group = purple_request_field_group_new(group_name);
+
+    field = purple_request_field_string_new("motd", "Message of the Day", current_motd, FALSE);
+    purple_request_field_string_set_editable(field, TRUE);
+    purple_request_field_set_required(field, TRUE);
+    purple_request_field_string_set_value(field, current_motd);
+    purple_request_field_group_add_field(group, field);
+
+    purple_request_fields_add_group(fields, group);
+
+    bnet->set_motd_fields = fields;
+
+    purple_request_fields(gc, "Edit Clan MOTD", "Change this WarCraft III clan's MOTD.", NULL, fields,
+            "Save", (GCallback)bnet_action_set_motd_cb, "Cancel", NULL,
+            bnet->account, NULL, NULL, bnet);
+
+    g_free(tag_string);
+    g_free(group_name);
+}
+
+static void
+bnet_action_set_user_data(PurplePluginAction *action)
+{
+    PurpleConnection *gc = action->context;
+    BnetConnectionData *bnet = gc->proto_data;
+
+    if (bnet == NULL) return;
+
+    if (bnet->emulate_telnet) return;
+
+    bnet_profile_get_for_edit(bnet);
+}
+
+static void
+bnet_profile_get_for_edit(BnetConnectionData *bnet)
+{
+    const char *uu_norm = bnet_normalize(bnet->account, bnet->unique_username);
+    int request_cookie = g_str_hash(uu_norm);
+    BnetUserDataRequest *req;
+    char **keys;
+
+    keys = g_strsplit(BNET_USERDATA_PROFILE_REQUEST, "\n", -1);
+
+    bnet->writing_profile = TRUE;
+
+    req = bnet_userdata_request_new(request_cookie, BNET_READUSERDATA_REQUEST_PROFILE,
+            bnet->unique_username, keys, bnet->product_id);
+
+    bnet->userdata_requests = g_list_append(bnet->userdata_requests, req);
+
+    bnet_send_READUSERDATA(bnet, request_cookie, bnet->unique_username, keys);
+}
+
+static void
+bnet_profile_show_write_dialog(BnetConnectionData *bnet,
+        const char *psex, const char *page, const char *ploc, const char *pdescr)
+{
+    PurpleRequestField *field;
+    PurpleRequestFields *fields = purple_request_fields_new();
+    gchar *group_name = g_strdup_printf("Change profile information for %s", bnet->username);
+    PurpleRequestFieldGroup *group = purple_request_field_group_new(group_name);
+
+    field = purple_request_field_string_new("profile\\sex", "Sex", psex, FALSE);
+    purple_request_field_group_add_field(group, field);
+    purple_request_field_string_set_editable(field, TRUE);
+    purple_request_field_set_required(field, FALSE);
+    purple_request_field_string_set_value(field, psex);
+
+    /*field = purple_request_field_string_new("profile\\age", "Age", page, FALSE);
+      purple_request_field_string_set_editable(field, FALSE);
+      purple_request_field_set_required(field, FALSE);
+      purple_request_field_string_set_value(field, page);
+      purple_request_field_group_add_field(group, field);*/
+
+    field = purple_request_field_string_new("profile\\location", "Location", ploc, FALSE);
+    purple_request_field_group_add_field(group, field);
+    purple_request_field_string_set_editable(field, TRUE);
+    purple_request_field_set_required(field, FALSE);
+    purple_request_field_string_set_value(field, ploc);
+
+    field = purple_request_field_string_new("profile\\description", "Description", pdescr, TRUE);
+    purple_request_field_group_add_field(group, field);
+    purple_request_field_string_set_editable(field, TRUE);
+    purple_request_field_set_required(field, FALSE);
+    purple_request_field_string_set_value(field, pdescr);
+
+    purple_request_fields_add_group(fields, group);
+
+    bnet->profile_write_fields = fields;
+
+    bnet->writing_profile = FALSE;
+
+    purple_request_fields(bnet->account->gc,
+            "Edit Profile",
+            NULL, NULL,
+            fields,
+            "_Save", (GCallback)bnet_profile_write_cb,
+            "_Cancel", NULL,
+            bnet->account,
+            NULL, NULL,
+            bnet);
+}
+
+static void
+bnet_profile_write_cb(gpointer data)
+{
+    BnetConnectionData *bnet;
+    PurpleRequestFields *fields;
+    GList *group_list; PurpleRequestFieldGroup *group;
+    GList *field_list; PurpleRequestField *field;
+    const char *s_const = "";
+    const char *sex = s_const;
+    const char *age = s_const;
+    const char *location = s_const;
+    const char *description = s_const;
+    const char *field_id;
+
+    bnet = data;
+    if (bnet == NULL) return;
+    fields = bnet->profile_write_fields;
+    if (fields == NULL) return;
+    group_list = g_list_first(purple_request_fields_get_groups(fields));
+    if (group_list == NULL) return;
+    group = group_list->data; // only one group
+    if (group == NULL) return;
+    field_list = g_list_first(purple_request_field_group_get_fields(group));
+
+    while (field_list != NULL) {
+        field = field_list->data;
+        field_id = purple_request_field_get_id(field);
+        if (strcmp(field_id, "profile\\sex") == 0) {
+            sex = purple_request_field_string_get_value(field);
+            if (sex == NULL) {
+                sex = s_const;
+            }
+        } else if (strcmp(field_id, "profile\\age") == 0) {
+            age = purple_request_field_string_get_value(field);
+            if (age == NULL) {
+                age = s_const;
+            }
+        } else if (strcmp(field_id, "profile\\location") == 0) {
+            location = purple_request_field_string_get_value(field);
+            if (location == NULL) {
+                location = s_const;
+            }
+        } else if (strcmp(field_id, "profile\\description") == 0) {
+            description = purple_request_field_string_get_value(field);
+            if (description == NULL) {
+                description = s_const;
+            }
+        }
+        field_list = g_list_next(field_list);
+    }
+
+    if (sex != s_const ||
+        age != s_const ||
+        location != s_const ||
+        description == s_const) {
+        bnet_send_WRITEUSERDATA(bnet, sex, age, location, description);
+    }
+}
+
 
 static GHashTable *
 bnet_chat_info_defaults(PurpleConnection *gc, const char *chat_name)
@@ -5787,7 +6710,7 @@ bnet_chat_info(PurpleConnection *gc)
 static char *
 bnet_channel_message_parse(char *stats_data, BnetChatEventFlags flags, int ping)
 {
-    BnetProductID product_id = *((guint32 *)(stats_data));
+    BnetProductID product_id = bnet_clan_string_to_tag(stats_data);
     return g_strdup_printf("%dms using %s", ping, bnet_get_product_name(product_id));
 }
 
@@ -6025,7 +6948,7 @@ bnet_get_location_text(BnetFriendLocation location, char *location_name)
             return g_strdup("Nowhere");
         case BNET_FRIEND_LOCATION_CHANNEL:
             if (strlen(location_name) > 0) {
-                return g_strdup_printf("In channel %s", location_name);
+                return g_strdup_printf("in channel %s", location_name);
             } else {
                 return g_strdup("In a private channel");
             }
@@ -6098,9 +7021,6 @@ bnet_get_product_name(BnetProductID product)
 static gchar *
 bnet_get_product_id_str(BnetProductID product)
 {
-    guint32 *pproduct;
-    gchar *ret;
-
     switch (product)
     {
         case BNET_GAME_TYPE_STAR: product = BNET_PRODUCT_STAR; break;
@@ -6116,14 +7036,7 @@ bnet_get_product_id_str(BnetProductID product)
         case BNET_GAME_TYPE_JSTR: product = BNET_PRODUCT_JSTR; break;
     }
 
-    pproduct = &product;
-    ret = g_malloc0(5);
-    ret[0] = *(((gchar *)pproduct) + 3);
-    ret[1] = *(((gchar *)pproduct) + 2);
-    ret[2] = *(((gchar *)pproduct) + 1);
-    ret[3] = *(((gchar *)pproduct) + 0);
-    ret[4] = '\0';
-    return ret;
+    return bnet_clan_tag_to_string(product);
 }
 
 static GList *
@@ -6186,6 +7099,7 @@ bnet_remove_buddy(PurpleConnection *gc, PurpleBuddy *buddy, PurpleGroup *group)
     if (bfi == NULL) return;
 
     if (bfi->type == BNET_USER_TYPE_FRIEND) {
+        GList *el;
         cmd = g_strdup_printf("/f r %s", username);
         if (bnet->emulate_telnet) {
             bnet_send_telnet_line(bnet, cmd);
@@ -6193,6 +7107,20 @@ bnet_remove_buddy(PurpleConnection *gc, PurpleBuddy *buddy, PurpleGroup *group)
             bnet_send_CHATCOMMAND(bnet, cmd);
         }
         g_free(cmd);
+
+        // remove the data from the free list
+        // purple_blist_remove_buddy will call bnet_friend_info_free and
+        // friend list diff will remove the link
+        el = g_list_first(bnet->friends_list);
+        while (el != NULL) {
+            if (el->data != NULL) {
+                BnetUser *bfi_link = el->data;
+                if (strcmp(bfi_link->username, bfi->username) == 0) {
+                    el->data = NULL;
+                }
+            }
+            el = g_list_next(el);
+        }
     }
 }
 
@@ -6373,7 +7301,7 @@ bnet_normalize(const PurpleAccount *account, const char *in)
 {
     static char out[64];
 
-    char *o = g_ascii_strdown(in, strlen(in));
+    char *o = g_ascii_strdown(in, -1);
     g_memmove((char *)out, o, strlen(o) + 1);
     g_free(o);
 
@@ -6542,7 +7470,7 @@ bnet_actions(PurplePlugin *plugin, gpointer context)
     action = purple_plugin_action_new("Show News and MOTD...", bnet_action_show_news);
     list = g_list_append(list, action);
 
-    if (bnet->clan_info != NULL) {
+    if (bnet_clan_info_get_tag(bnet->clan_info) != 0) {
         my_rank = bnet_clan_info_get_my_rank(bnet->clan_info);
         if (my_rank == BNET_CLAN_RANK_SHAMAN ||
                 my_rank == BNET_CLAN_RANK_CHIEFTAIN) {
@@ -6574,7 +7502,7 @@ static PurplePluginProtocolInfo prpl_info =
     bnet_send_whisper,                  /* send_im */
     NULL,                               /* set_info */
     NULL,                               /* send_typing */
-    bnet_get_info,                      /* get_info */
+    bnet_lookup_info,                   /* get_info */
     bnet_set_status,                    /* set_status */
     NULL,                               /* set_idle */
     bnet_account_chpw,                  /* change_passwd */

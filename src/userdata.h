@@ -27,7 +27,7 @@
 #define BNET_USERDATA_PROFILE_REQUEST "profile\\sex\nprofile\\age\nprofile\\location\nprofile\\description"
 #define BNET_USERDATA_RECORD_REQUEST(prod, num) "Record\\%s\\%d\\wins\nRecord\\%s\\%d\\losses\nRecord\\%s\\%d\\disconnects\nRecord\\%s\\%d\\last game\nRecord\\%s\\%d\\last game result", (prod), (num), (prod), (num), (prod), (num), (prod), (num), (prod), (num)
 #define BNET_USERDATA_RECORD_LADDER_REQUEST(prod, num) "Record\\%s\\%d\\wins\nRecord\\%s\\%d\\losses\nRecord\\%s\\%d\\disconnects\nRecord\\%s\\%d\\last game\nRecord\\%s\\%d\\last game result\nRecord\\%s\\%d\\rating\nRecord\\%s\\%d\\high rating\nDynKey\\%s\\%d\\rank\nRecord\\%s\\%d\\high rank", (prod), (num), (prod), (num), (prod), (num), (prod), (num), (prod), (num), (prod), (num), (prod), (num), (prod), (num), (prod), (num)
-#define BNET_USERDATA_SYSTEM_REQUEST "System\\Account Created\nSystem\\Last Logoff\nSystem\\Last Logon\nSystem\\Username\n"
+#define BNET_USERDATA_SYSTEM_REQUEST "System\\Account Created\nSystem\\Last Logoff\nSystem\\Last Logon\nSystem\\Time Logged\nSystem\\Username\n"
 #define BNET_USERDATA_RECORD_NORMAL  0
 #define BNET_USERDATA_RECORD_LADDER  1
 #define BNET_USERDATA_RECORD_IRONMAN 3

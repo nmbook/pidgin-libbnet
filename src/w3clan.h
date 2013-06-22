@@ -63,21 +63,28 @@ typedef struct _BnetClanMember BnetClanMember;
 gchar *bnet_clan_tag_to_string(const BnetClanTag tag);
 gboolean bnet_clan_is_clan_channel(const BnetClanInfo *info, const char *channel_name);
 BnetClanTag bnet_clan_string_to_tag(const gchar *tag_string);
+
 guint32 bnet_clan_packet_register(BnetClanInfo *info, const guint8 packet_id, gpointer data);
 gpointer bnet_clan_packet_unregister(BnetClanInfo *info, const guint8 packet_id, const guint32 cookie);
-BnetClanInfo *bnet_clan_info_new(BnetClanTag tag, BnetClanMemberRank rank);
+
+BnetClanInfo *bnet_clan_info_new(void);
+void bnet_clan_info_join_clan(BnetClanInfo *info, BnetClanTag tag, BnetClanMemberRank rank);
+void bnet_clan_info_leave_clan(BnetClanInfo *info);
 void bnet_clan_info_free(BnetClanInfo *info);
-BnetClanTag bnet_clan_info_get_tag(BnetClanInfo *info);
-BnetClanMemberRank bnet_clan_info_get_my_rank(BnetClanInfo *info);
-gchar *bnet_clan_info_get_motd(BnetClanInfo *info);
+BnetClanTag bnet_clan_info_get_tag(const BnetClanInfo *info);
+BnetClanMemberRank bnet_clan_info_get_my_rank(const BnetClanInfo *info);
+gchar *bnet_clan_info_get_motd(const BnetClanInfo *info);
 void bnet_clan_info_set_motd(BnetClanInfo *info, gchar *motd);
+void bnet_clan_info_set_members(BnetClanInfo *info, GList *members);
+const BnetClanMember *bnet_clan_info_get_member(const BnetClanInfo *info, gchar *name);
+
 BnetClanMember *bnet_clan_member_new(gchar *name, BnetClanMemberRank rank, BnetClanMemberStatus status, gchar *location);
-gchar *bnet_clan_member_get_name(BnetClanMember *member);
-gchar *bnet_clan_member_get_location(BnetClanMember *member);
+gchar *bnet_clan_member_get_name(const BnetClanMember *member);
+gchar *bnet_clan_member_get_location(const BnetClanMember *member);
 void bnet_clan_member_set_location(BnetClanMember *member, gchar *location);
-BnetClanMemberRank bnet_clan_member_get_rank(BnetClanMember *member);
+BnetClanMemberRank bnet_clan_member_get_rank(const BnetClanMember *member);
 void bnet_clan_member_set_rank(BnetClanMember *member, BnetClanMemberRank rank);
-BnetClanMemberStatus bnet_clan_member_get_status(BnetClanMember *member);
+BnetClanMemberStatus bnet_clan_member_get_status(const BnetClanMember *member);
 void bnet_clan_member_set_status(BnetClanMember *member, BnetClanMemberStatus status);
 void bnet_clan_member_free(BnetClanMember *member);
 

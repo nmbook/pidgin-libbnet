@@ -64,169 +64,6 @@
 #include "w3clan.h"
 #include "userdata.h"
 
-// bncs packet ids
-typedef enum {
-    BNET_SID_NULL                    = 0x00,
-    BNET_SID_CLIENTID                = 0x05,
-    BNET_SID_STARTVERSIONING         = 0x06,
-    BNET_SID_REPORTVERSION           = 0x07,
-    BNET_SID_ENTERCHAT               = 0x0A,
-    BNET_SID_GETCHANNELLIST          = 0x0B,
-    BNET_SID_JOINCHANNEL             = 0x0C,
-    BNET_SID_CHATCOMMAND             = 0x0E,
-    BNET_SID_CHATEVENT               = 0x0F,
-    BNET_SID_LEAVECHAT               = 0x10,
-    BNET_SID_LOCALEINFO              = 0x12,
-    BNET_SID_UDPPINGRESPONSE         = 0x14,
-    BNET_SID_MESSAGEBOX              = 0x19,
-    BNET_SID_LOGONCHALLENGEEX        = 0x1D,
-    BNET_SID_CLIENTID2               = 0x1E,
-    BNET_SID_PING                    = 0x25,
-    BNET_SID_READUSERDATA            = 0x26,
-    BNET_SID_WRITEUSERDATA           = 0x27,
-    BNET_SID_LOGONCHALLENGE          = 0x28,
-    BNET_SID_SYSTEMINFO              = 0x2B,
-    BNET_SID_CDKEY                   = 0x30,
-    BNET_SID_PROFILE                 = 0x35,
-    BNET_SID_CDKEY2                  = 0x36,
-    BNET_SID_LOGONRESPONSE2          = 0x3A,
-    BNET_SID_CREATEACCOUNT2          = 0x3D,
-    BNET_SID_WARCRAFTGENERAL         = 0x44,
-    BNET_SID_NETGAMEPORT             = 0x45,
-    BNET_SID_NEWS_INFO               = 0x46,
-    BNET_SID_AUTH_INFO               = 0x50,
-    BNET_SID_AUTH_CHECK              = 0x51,
-    BNET_SID_AUTH_ACCOUNTCREATE      = 0x52,
-    BNET_SID_AUTH_ACCOUNTLOGON       = 0x53,
-    BNET_SID_AUTH_ACCOUNTLOGONPROOF  = 0x54,
-    BNET_SID_AUTH_ACCOUNTCHANGE      = 0x55,
-    BNET_SID_AUTH_ACCOUNTCHANGEPROOF = 0x56,
-    BNET_SID_SETEMAIL                = 0x59,
-    BNET_SID_FRIENDSLIST             = 0x65,
-    BNET_SID_FRIENDSUPDATE           = 0x66,
-    BNET_SID_FRIENDSADD              = 0x67,
-    BNET_SID_FRIENDSREMOVE           = 0x68,
-    BNET_SID_FRIENDSPOSITION         = 0x69,
-    BNET_SID_CLANFINDCANDIDATES      = 0x70,
-    BNET_SID_CLANINVITEMULTIPLE      = 0x71,
-    BNET_SID_CLANCREATIONINVITATION  = 0x72,
-    BNET_SID_CLANDISBAND             = 0x73,
-    BNET_SID_CLANMAKECHIEFTAIN       = 0x74,
-    BNET_SID_CLANINFO                = 0x75,
-    BNET_SID_CLANQUITNOTIFY          = 0x76,
-    BNET_SID_CLANINVITATION          = 0x77,
-    BNET_SID_CLANREMOVEMEMBER        = 0x78,
-    BNET_SID_CLANINVITATIONRESPONSE  = 0x79,
-    BNET_SID_CLANRANKCHANGE          = 0x7A,
-    BNET_SID_CLANSETMOTD             = 0x7B,
-    BNET_SID_CLANMOTD                = 0x7C,
-    BNET_SID_CLANMEMBERLIST          = 0x7D,
-    BNET_SID_CLANMEMBERREMOVED       = 0x7E,
-    BNET_SID_CLANMEMBERSTATUSCHANGE  = 0x7F,
-    BNET_SID_CLANMEMBERRANKCHANGE    = 0x81,
-    BNET_SID_CLANMEMBERINFORMATION   = 0x82,
-} BnetPacketID;
-
-// bnls packet ids
-#define BNET_BNLS_REQUESTVERSIONBYTE 0x10
-#define BNET_BNLS_VERSIONCHECKEX2 0x1A
-#define BNET_BNLS_LOGONCHALLENGE 0x02
-#define BNET_BNLS_LOGONPROOF 0x03
-#define BNET_BNLS_CHOOSENLSREVISION 0x0D
-
-// AUTH_INFO protocol id
-#define BNET_PROTOCOL_ID 0
-
-// architecture
-#define BNET_PLATFORM_IX86 'IX86'
-#define BNET_PLATFORM_PMAC 'PMAC'
-#define BNET_PLATFORM_XMAC 'XMAC'
-
-// udp
-//'bnet'
-#define BNET_UDP_SIG 'bnet'
-
-// game product id
-#define BNET_PRODUCT_STAR 'STAR'
-#define BNET_PRODUCT_SEXP 'SEXP'
-#define BNET_PRODUCT_W2BN 'W2BN'
-#define BNET_PRODUCT_D2DV 'D2DV'
-#define BNET_PRODUCT_D2XP 'D2XP'
-#define BNET_PRODUCT_JSTR 'JSTR'
-#define BNET_PRODUCT_WAR3 'WAR3'
-#define BNET_PRODUCT_W3XP 'W3XP'
-#define BNET_PRODUCT_DRTL 'DRTL'
-#define BNET_PRODUCT_DSHR 'DSHR'
-#define BNET_PRODUCT_SSHR 'SSHR'
-#define BNET_PRODUCT_CHAT 'CHAT'
-
-// result codes
-#define BNET_SUCCESS 0x0000
-
-// AUTH_CHECK result codes
-// matches any verbyte errors
-#define BNET_AUTH_CHECK_VERCODEERROR_MASK   0x00FF
-// matches any version check errors
-#define BNET_AUTH_CHECK_VERERROR_MASK       0x0100
-// matches any key check errors
-#define BNET_AUTH_CHECK_KEYERROR_MASK       0x0200
-// matches the specific error code for a error
-#define BNET_AUTH_CHECK_ERROR_MASK          0x000F
-// matches the key index in the error code
-#define BNET_AUTH_CHECK_KEYNUMBER_MASK      0x00F0
-// version check error: invalid version
-#define BNET_AUTH_CHECK_VERERROR_INVALID    0x0001
-// version check error: outdated version
-#define BNET_AUTH_CHECK_VERERROR_OLD        0x0000
-// version check error: downgrade
-#define BNET_AUTH_CHECK_VERERROR_NEW        0x0002
-// key check error: invalid key
-#define BNET_AUTH_CHECK_KEYERROR_INVALID    0x0000
-// key check error: key in use
-#define BNET_AUTH_CHECK_KEYERROR_INUSE      0x0001
-// key check error: banned key
-#define BNET_AUTH_CHECK_KEYERROR_BANNED     0x0002
-// key check error: key for different product
-#define BNET_AUTH_CHECK_KEYERROR_BADPRODUCT 0x0003
-
-// REPORTVERSION result codes
-#define BNET_REPORTVERS_FAILED           0x00
-#define BNET_REPORTVERS_OLD              0x01
-#define BNET_REPORTVERS_SUCCESS          0x02
-#define BNET_REPORTVERS_INVALID          0x03
-
-#define BNET_CDKEY_SUCCESS               0x01
-#define BNET_CDKEY_INVALID               0x02
-#define BNET_CDKEY_BADPRODUCT            0x03
-#define BNET_CDKEY_BANNED                0x04
-#define BNET_CDKEY_INUSE                 0x05
-
-// account result codes for SID_AUTH_ACCOUNT* packets)
-#define BNET_AUTH_ACCOUNT_DNE            0x01
-#define BNET_AUTH_ACCOUNT_BADPW          0x02
-#define BNET_AUTH_ACCOUNT_EXISTS         0x04
-#define BNET_AUTH_ACCOUNT_REQUPGRADE     0x05
-#define BNET_AUTH_ACCOUNT_CLOSED         0x06
-#define BNET_AUTH_ACCOUNT_SHORT          0x07
-#define BNET_AUTH_ACCOUNT_BADCHAR        0x08
-#define BNET_AUTH_ACCOUNT_BADWORD        0x09
-#define BNET_AUTH_ACCOUNT_NOTENOUGHALPHA 0x0A
-#define BNET_AUTH_ACCOUNT_ADJPUNCT       0x0B
-#define BNET_AUTH_ACCOUNT_TOOMANYPUNCT   0x0C
-#define BNET_AUTH_ACCOUNT_REQEMAIL       0x0E
-#define BNET_AUTH_ACCOUNT_ERROR          0x0F
-
-// account logon result codes for LOGONRESPONSE2 (match SID_AUTH_ACCOUNT* error codes)
-#define BNET_LOGONRESP2_DNE              BNET_AUTH_ACCOUNT_DNE
-#define BNET_LOGONRESP2_BADPW            BNET_AUTH_ACCOUNT_BADPW
-#define BNET_LOGONRESP2_CLOSED           BNET_AUTH_ACCOUNT_CLOSED
-
-// account create result codes for CREATEACCOUNT2
-#define BNET_CREATEACC2_BADCHAR          0x02
-#define BNET_CREATEACC2_BADWORD          0x03
-#define BNET_CREATEACC2_EXISTS           0x04
-#define BNET_CREATEACC2_NOTENOUGHALPHA   0x06
-
 // prpl data
 #define PROTOCOL_NAME      "bnet"
 #define PLUGIN_ID          "prpl-ribose-bnet"
@@ -266,165 +103,106 @@ typedef enum {
 #define BNET_STATUS_DND     "Do not disturb"
 #define BNET_STATUS_OFFLINE "Offline"
 
-// this enum specifies choosable game types
-// this is the order BNLS uses too
-typedef enum {
-    BNET_GAME_TYPE_STAR = 0x01,
-    BNET_GAME_TYPE_SEXP = 0x02,
-    BNET_GAME_TYPE_W2BN = 0x03,
-    BNET_GAME_TYPE_D2DV = 0x04,
-    BNET_GAME_TYPE_D2XP = 0x05,
-    BNET_GAME_TYPE_JSTR = 0x06,
-    BNET_GAME_TYPE_WAR3 = 0x07,
-    BNET_GAME_TYPE_W3XP = 0x08,
-    BNET_GAME_TYPE_DRTL = 0x09,
-    BNET_GAME_TYPE_DSHR = 0x0A,
-    BNET_GAME_TYPE_SSHR = 0x0B
-} BnetGameType;
-
-// this type specifies values that can come from BNET_PRODUCT_*
-// #define'd in packet.h
-typedef guint32 BnetProductID;
-
 // buffer size
 #define BNET_INITIAL_BUFSIZE 512
-
-typedef enum {
-    BNET_CHANNELJOIN_NOCREATE   = 0x00000000,
-    BNET_CHANNELJOIN_FIRSTJOIN  = 0x00000001,
-    BNET_CHANNELJOIN_FORCEDJOIN = 0x00000002,
-    BNET_CHANNELJOIN_D2FIRST    = 0x00000004
-} BnetChannelJoinFlags;
-
-typedef enum {
-    BNET_EID_SHOWUSER            = 0x00000001,
-    BNET_EID_JOIN                = 0x00000002,
-    BNET_EID_LEAVE               = 0x00000003,
-    BNET_EID_WHISPER             = 0x00000004,
-    BNET_EID_TALK                = 0x00000005,
-    BNET_EID_BROADCAST           = 0x00000006,
-    BNET_EID_CHANNEL             = 0x00000007,
-    BNET_EID_USERFLAGS           = 0x00000009,
-    BNET_EID_WHISPERSENT         = 0x0000000A,
-    BNET_EID_CHANNELFULL         = 0x0000000D,
-    BNET_EID_CHANNELDOESNOTEXIST = 0x0000000E,
-    BNET_EID_CHANNELRESTRICTED   = 0x0000000F,
-    BNET_EID_INFO                = 0x00000012,
-    BNET_EID_ERROR               = 0x00000013,
-    BNET_EID_EMOTE               = 0x00000017
-} BnetChatEventID;
-
-typedef enum {
-    BNET_USER_FLAG_NONE      = 0x00000000,
-    BNET_USER_FLAG_BLIZZREP  = 0x00000001,
-    BNET_USER_FLAG_OP        = 0x00000002,
-    BNET_USER_FLAG_VOICE     = 0x00000004,
-    BNET_USER_FLAG_BNETADMIN = 0x00000008,
-    BNET_USER_FLAG_NOUDP     = 0x00000010,
-    BNET_USER_FLAG_SQUELCH   = 0x00000020,
-    BNET_USER_FLAG_GUEST     = 0x00000040,
-    BNET_USER_FLAG_BEEP      = 0x00000100,
-    
-    BNET_CHAN_FLAG_NONE      = 0x00000000,
-    BNET_CHAN_FLAG_PUBLIC    = 0x00000001,
-    BNET_CHAN_FLAG_MODERATED = 0x00000002,
-    BNET_CHAN_FLAG_RESTRICT  = 0x00000004,
-    BNET_CHAN_FLAG_SILENT    = 0x00000008,
-    BNET_CHAN_FLAG_SYSTEM    = 0x00000010,
-    BNET_CHAN_FLAG_PRODUCT   = 0x00000020,
-    BNET_CHAN_FLAG_GLOBAL    = 0x00001000,
-    BNET_CHAN_FLAG_REDIRECT  = 0x00004000,
-    BNET_CHAN_FLAG_CHAT      = 0x00008000,
-    BNET_CHAN_FLAG_TECHSPPT  = 0x00010000
-} BnetChatEventFlags;
-
-#define BNET_USER_TYPE_CHANNELUSER  0x01
-#define BNET_USER_TYPE_FRIEND       0x02
-
-typedef enum {
-    BNET_USER_TAG_ONFRIENDLIST = 1
-} BnetUserTag;
-
-typedef struct {
-    gint32 type;
-    gchar *username;
-    // tag: used currently for friend list diff right now
-    BnetUserTag tag;
-    gchar data[48];
-} BnetUser;
-
-typedef struct {
-    guint32 type;
-    char *username;
-    // tag: used currently for friend list diff right now
-    BnetUserTag tag;
-    char *stats_data;
-    BnetChatEventFlags flags;
-    gint32 ping;
-    gboolean hidden;
-    
-    char *stats_message;
-} BnetChannelUser;
-
-typedef enum {
-    BNET_FRIEND_STATUS_ONLINE = 0x00,
-    BNET_FRIEND_STATUS_MUTUAL = 0x01,
-    BNET_FRIEND_STATUS_DND    = 0x02,
-    BNET_FRIEND_STATUS_AWAY   = 0x04
-} BnetFriendStatus;
-
-typedef enum {
-    BNET_FRIEND_LOCATION_OFFLINE        = 0x00,
-    BNET_FRIEND_LOCATION_ONLINE         = 0x01,
-    BNET_FRIEND_LOCATION_CHANNEL        = 0x02,
-    BNET_FRIEND_LOCATION_GAME_PUBLIC    = 0x03,
-    BNET_FRIEND_LOCATION_GAME_PRIVATE   = 0x04,
-    BNET_FRIEND_LOCATION_GAME_PROTECTED = 0x05
-} BnetFriendLocation;
-
-typedef struct {
-    guint32 type;
-    // account name from friend list
-    char *account;
-    // tag: used currently for friend list diff right now
-    BnetUserTag tag;
-    // information directly from friend list
-    BnetFriendStatus status;
-    BnetFriendLocation location;
-    BnetProductID product;
-    char *location_name;
-
-    // whether we are waiting for a /whois on this user
-    BnetFriendStatus automated_lookup;
-    // from /whois (if available)
-    // when a whois returns "away" or "dnd" message
-    gchar *dnd_stored_status;
-    gchar *away_stored_status;
-    
-    // prpl buddy object
-    PurpleBuddy *buddy;
-
-} BnetFriendInfo;
-
-/*
-typedef struct {
-    PurpleConversation *conv;
-    BnetCommandID cmd;
-    BnetPacketID pkt_id;
-    BnetPacket *pkt;
-    BnetPacketID pkt_response;
-    int cookie;
-    BnetQueueFunc cb;
-    gboolean responded;
-    int delay;
-} BnetQueueElement;
-*/
 
 // protocol bytes
 #define BNET_PROTOCOL_BNCS  0x01
 #define BNET_PROTOCOL_MCP   0x01
 #define BNET_PROTOCOL_BNFTP 0x02
 #define BNET_PROTOCOL_CHAT  0x03
+
+// bncs packet ids
+typedef enum {
+    BNET_SID_NULL                    = 0x00,
+    BNET_SID_CLIENTID                = 0x05,
+    BNET_SID_STARTVERSIONING         = 0x06,
+    BNET_SID_REPORTVERSION           = 0x07,
+    BNET_SID_ENTERCHAT               = 0x0A,
+    BNET_SID_GETCHANNELLIST          = 0x0B,
+    BNET_SID_JOINCHANNEL             = 0x0C,
+    BNET_SID_CHATCOMMAND             = 0x0E,
+    BNET_SID_CHATEVENT               = 0x0F,
+    BNET_SID_LEAVECHAT               = 0x10,
+    BNET_SID_LOCALEINFO              = 0x12,
+    BNET_SID_UDPPINGRESPONSE         = 0x14,
+    BNET_SID_MESSAGEBOX              = 0x19,
+    BNET_SID_LOGONCHALLENGEEX        = 0x1D,
+    BNET_SID_CLIENTID2               = 0x1E,
+    BNET_SID_PING                    = 0x25,
+    BNET_SID_READUSERDATA            = 0x26,
+    BNET_SID_WRITEUSERDATA           = 0x27,
+    BNET_SID_LOGONCHALLENGE          = 0x28,
+    BNET_SID_SYSTEMINFO              = 0x2B,
+    BNET_SID_CDKEY                   = 0x30,
+    BNET_SID_W3PROFILE               = 0x35,
+    BNET_SID_CDKEY2                  = 0x36,
+    BNET_SID_LOGONRESPONSE2          = 0x3A,
+    BNET_SID_CREATEACCOUNT2          = 0x3D,
+    BNET_SID_W3GENERAL               = 0x44,
+    BNET_SID_NETGAMEPORT             = 0x45,
+    BNET_SID_NEWS_INFO               = 0x46,
+    BNET_SID_AUTH_INFO               = 0x50,
+    BNET_SID_AUTH_CHECK              = 0x51,
+    BNET_SID_AUTH_ACCOUNTCREATE      = 0x52,
+    BNET_SID_AUTH_ACCOUNTLOGON       = 0x53,
+    BNET_SID_AUTH_ACCOUNTLOGONPROOF  = 0x54,
+    BNET_SID_AUTH_ACCOUNTCHANGE      = 0x55,
+    BNET_SID_AUTH_ACCOUNTCHANGEPROOF = 0x56,
+    BNET_SID_SETEMAIL                = 0x59,
+    BNET_SID_FRIENDSLIST             = 0x65,
+    BNET_SID_FRIENDSUPDATE           = 0x66,
+    BNET_SID_FRIENDSADD              = 0x67,
+    BNET_SID_FRIENDSREMOVE           = 0x68,
+    BNET_SID_FRIENDSPOSITION         = 0x69,
+    BNET_SID_CLANFINDCANDIDATES      = 0x70,
+    BNET_SID_CLANINVITEMULTIPLE      = 0x71,
+    BNET_SID_CLANCREATIONINVITATION  = 0x72,
+    BNET_SID_CLANDISBAND             = 0x73,
+    BNET_SID_CLANMAKECHIEFTAIN       = 0x74,
+    BNET_SID_CLANINFO                = 0x75,
+    BNET_SID_CLANQUITNOTIFY          = 0x76,
+    BNET_SID_CLANINVITATION          = 0x77,
+    BNET_SID_CLANREMOVEMEMBER        = 0x78,
+    BNET_SID_CLANINVITATIONRESPONSE  = 0x79,
+    BNET_SID_CLANRANKCHANGE          = 0x7A,
+    BNET_SID_CLANSETMOTD             = 0x7B,
+    BNET_SID_CLANMOTD                = 0x7C,
+    BNET_SID_CLANMEMBERLIST          = 0x7D,
+    BNET_SID_CLANMEMBERREMOVED       = 0x7E,
+    BNET_SID_CLANMEMBERSTATUSCHANGE  = 0x7F,
+    BNET_SID_CLANMEMBERRANKCHANGE    = 0x81,
+    BNET_SID_CLANMEMBERINFO          = 0x82,
+} BnetPacketID;
+
+// AUTH_INFO protocol id
+#define BNET_PROTOCOL_ID 0
+
+// architecture
+#define BNET_PLATFORM_IX86 'IX86'
+#define BNET_PLATFORM_PMAC 'PMAC'
+#define BNET_PLATFORM_XMAC 'XMAC'
+
+// udp
+//'bnet'
+#define BNET_UDP_SIG 'bnet'
+
+// game product id
+#define BNET_PRODUCT_STAR 'STAR'
+#define BNET_PRODUCT_SEXP 'SEXP'
+#define BNET_PRODUCT_W2BN 'W2BN'
+#define BNET_PRODUCT_D2DV 'D2DV'
+#define BNET_PRODUCT_D2XP 'D2XP'
+#define BNET_PRODUCT_JSTR 'JSTR'
+#define BNET_PRODUCT_WAR3 'WAR3'
+#define BNET_PRODUCT_W3XP 'W3XP'
+#define BNET_PRODUCT_DRTL 'DRTL'
+#define BNET_PRODUCT_DSHR 'DSHR'
+#define BNET_PRODUCT_SSHR 'SSHR'
+#define BNET_PRODUCT_CHAT 'CHAT'
+
+// this type specifies values that can come from BNET_PRODUCT_*
+typedef guint32 BnetProductID;
 
 // versioning system to use
 typedef gint32 BnetVersioningSystem;
@@ -451,6 +229,287 @@ typedef gint32 BnetLogonSystem;
 #define BNET_TELNET_SID 2000
 // 30xx
 #define BNET_TELNET_XID 3000
+
+// result codes
+#define BNET_SUCCESS 0x0000
+
+// AUTH_CHECK result codes
+// matches any verbyte errors
+#define BNET_AUTH_CHECK_VERCODEERROR_MASK   0x00FF
+// matches any version check errors
+#define BNET_AUTH_CHECK_VERERROR_MASK       0x0100
+// matches any key check errors
+#define BNET_AUTH_CHECK_KEYERROR_MASK       0x0200
+// matches the specific error code for a error
+#define BNET_AUTH_CHECK_ERROR_MASK          0x000F
+// matches the key index in the error code
+#define BNET_AUTH_CHECK_KEYNUMBER_MASK      0x00F0
+// version check error: invalid version
+#define BNET_AUTH_CHECK_VERERROR_INVALID    0x0001
+// version check error: outdated version
+#define BNET_AUTH_CHECK_VERERROR_OLD        0x0000
+// version check error: downgrade
+#define BNET_AUTH_CHECK_VERERROR_NEW        0x0002
+// key check error: invalid key
+#define BNET_AUTH_CHECK_KEYERROR_INVALID    0x0000
+// key check error: key in use
+#define BNET_AUTH_CHECK_KEYERROR_INUSE      0x0001
+// key check error: banned key
+#define BNET_AUTH_CHECK_KEYERROR_BANNED     0x0002
+// key check error: key for different product
+#define BNET_AUTH_CHECK_KEYERROR_BADPRODUCT 0x0003
+
+// REPORTVERSION result codes
+#define BNET_REPORTVERS_FAILED           0x00
+#define BNET_REPORTVERS_OLD              0x01
+#define BNET_REPORTVERS_SUCCESS          0x02
+#define BNET_REPORTVERS_INVALID          0x03
+
+// CDKEY result codes
+#define BNET_CDKEY_SUCCESS               0x01
+#define BNET_CDKEY_INVALID               0x02
+#define BNET_CDKEY_BADPRODUCT            0x03
+#define BNET_CDKEY_BANNED                0x04
+#define BNET_CDKEY_INUSE                 0x05
+
+// account result codes for SID_AUTH_ACCOUNT* packets)
+#define BNET_AUTH_ACCOUNT_DNE            0x01
+#define BNET_AUTH_ACCOUNT_BADPW          0x02
+#define BNET_AUTH_ACCOUNT_EXISTS         0x04
+#define BNET_AUTH_ACCOUNT_REQUPGRADE     0x05
+#define BNET_AUTH_ACCOUNT_CLOSED         0x06
+#define BNET_AUTH_ACCOUNT_SHORT          0x07
+#define BNET_AUTH_ACCOUNT_BADCHAR        0x08
+#define BNET_AUTH_ACCOUNT_BADWORD        0x09
+#define BNET_AUTH_ACCOUNT_NOTENOUGHALPHA 0x0A
+#define BNET_AUTH_ACCOUNT_ADJPUNCT       0x0B
+#define BNET_AUTH_ACCOUNT_TOOMANYPUNCT   0x0C
+#define BNET_AUTH_ACCOUNT_REQEMAIL       0x0E
+#define BNET_AUTH_ACCOUNT_ERROR          0x0F
+
+// account logon result codes for LOGONRESPONSE2 (match SID_AUTH_ACCOUNT* error codes)
+#define BNET_LOGONRESP2_DNE              BNET_AUTH_ACCOUNT_DNE
+#define BNET_LOGONRESP2_BADPW            BNET_AUTH_ACCOUNT_BADPW
+#define BNET_LOGONRESP2_CLOSED           BNET_AUTH_ACCOUNT_CLOSED
+
+// account create result codes for CREATEACCOUNT2
+#define BNET_CREATEACC2_BADCHAR          0x02
+#define BNET_CREATEACC2_BADWORD          0x03
+#define BNET_CREATEACC2_EXISTS           0x04
+#define BNET_CREATEACC2_NOTENOUGHALPHA   0x06
+
+// this enum specifies choosable game types (for BNLS)
+typedef enum {
+    BNET_GAME_TYPE_STAR = 0x01,
+    BNET_GAME_TYPE_SEXP = 0x02,
+    BNET_GAME_TYPE_W2BN = 0x03,
+    BNET_GAME_TYPE_D2DV = 0x04,
+    BNET_GAME_TYPE_D2XP = 0x05,
+    BNET_GAME_TYPE_JSTR = 0x06,
+    BNET_GAME_TYPE_WAR3 = 0x07,
+    BNET_GAME_TYPE_W3XP = 0x08,
+    BNET_GAME_TYPE_DRTL = 0x09,
+    BNET_GAME_TYPE_DSHR = 0x0A,
+    BNET_GAME_TYPE_SSHR = 0x0B,
+} BnetGameType;
+
+// bnls packet ids
+typedef enum {
+    BNET_BNLS_REQUESTVERSIONBYTE = 0x10,
+    BNET_BNLS_VERSIONCHECKEX2    = 0x1A,
+    BNET_BNLS_LOGONCHALLENGE     = 0x02,
+    BNET_BNLS_LOGONPROOF         = 0x03,
+    BNET_BNLS_CHOOSENLSREVISION  = 0x0D,
+} BnetBnlsPacketID;
+
+// flags for SID_JOINCHANNEL
+typedef enum {
+    BNET_CHANNELJOIN_NOCREATE   = 0x00000000,
+    BNET_CHANNELJOIN_FIRSTJOIN  = 0x00000001,
+    BNET_CHANNELJOIN_FORCEDJOIN = 0x00000002,
+    BNET_CHANNELJOIN_D2FIRST    = 0x00000004,
+} BnetChannelJoinFlags;
+
+// event types (SID_CHATEVENT or telnet lines)
+typedef enum {
+    BNET_EID_SHOWUSER            = 0x00000001,
+    BNET_EID_JOIN                = 0x00000002,
+    BNET_EID_LEAVE               = 0x00000003,
+    BNET_EID_WHISPER             = 0x00000004,
+    BNET_EID_TALK                = 0x00000005,
+    BNET_EID_BROADCAST           = 0x00000006,
+    BNET_EID_CHANNEL             = 0x00000007,
+    BNET_EID_USERFLAGS           = 0x00000009,
+    BNET_EID_WHISPERSENT         = 0x0000000A,
+    BNET_EID_CHANNELFULL         = 0x0000000D,
+    BNET_EID_CHANNELDOESNOTEXIST = 0x0000000E,
+    BNET_EID_CHANNELRESTRICTED   = 0x0000000F,
+    BNET_EID_INFO                = 0x00000012,
+    BNET_EID_ERROR               = 0x00000013,
+    BNET_EID_EMOTE               = 0x00000017
+} BnetChatEventID;
+
+// user flags & channel flags (SID_CHATEVENT or telnet lines)
+typedef enum {
+    BNET_USER_FLAG_NONE      = 0x00000000,
+    BNET_USER_FLAG_BLIZZREP  = 0x00000001,
+    BNET_USER_FLAG_OP        = 0x00000002,
+    BNET_USER_FLAG_VOICE     = 0x00000004,
+    BNET_USER_FLAG_BNETADMIN = 0x00000008,
+    BNET_USER_FLAG_NOUDP     = 0x00000010,
+    BNET_USER_FLAG_SQUELCH   = 0x00000020,
+    BNET_USER_FLAG_GUEST     = 0x00000040,
+    BNET_USER_FLAG_BEEP      = 0x00000100,
+    
+    BNET_CHAN_FLAG_NONE      = 0x00000000,
+    BNET_CHAN_FLAG_PUBLIC    = 0x00000001,
+    BNET_CHAN_FLAG_MODERATED = 0x00000002,
+    BNET_CHAN_FLAG_RESTRICT  = 0x00000004,
+    BNET_CHAN_FLAG_SILENT    = 0x00000008,
+    BNET_CHAN_FLAG_SYSTEM    = 0x00000010,
+    BNET_CHAN_FLAG_PRODUCT   = 0x00000020,
+    BNET_CHAN_FLAG_GLOBAL    = 0x00001000,
+    BNET_CHAN_FLAG_REDIRECT  = 0x00004000,
+    BNET_CHAN_FLAG_CHAT      = 0x00008000,
+    BNET_CHAN_FLAG_TECHSPPT  = 0x00010000
+} BnetChatEventFlags;
+
+// the "abstract" Battle.net user type
+// All possible buddy list entries are one of
+// the three types of this:
+// BnetChannelUser: users in the current channel
+// BnetFriendInfo: users in your Battle.net friend list
+// BnetClanMember: users in your WarCraft III clan
+typedef struct {
+    gint32 type;
+    gchar *username;
+    gchar data[48];
+} BnetUser;
+
+#define BNET_USER_TYPE_CHANNELUSER  0x01
+
+typedef struct {
+    guint32 type;
+    char *username;
+    char *stats_data;
+    BnetChatEventFlags flags;
+    gint32 ping;
+    gboolean hidden;
+    
+    char *stats_message;
+} BnetChannelUser;
+
+// friend status flags
+typedef enum {
+    BNET_FRIEND_STATUS_ONLINE = 0x00,
+    BNET_FRIEND_STATUS_MUTUAL = 0x01,
+    BNET_FRIEND_STATUS_DND    = 0x02,
+    BNET_FRIEND_STATUS_AWAY   = 0x04
+} BnetFriendStatus;
+
+// friend location types
+typedef enum {
+    BNET_FRIEND_LOCATION_OFFLINE        = 0x00,
+    BNET_FRIEND_LOCATION_ONLINE         = 0x01,
+    BNET_FRIEND_LOCATION_CHANNEL        = 0x02,
+    BNET_FRIEND_LOCATION_GAME_PUBLIC    = 0x03,
+    BNET_FRIEND_LOCATION_GAME_PRIVATE   = 0x04,
+    BNET_FRIEND_LOCATION_GAME_PROTECTED = 0x05
+} BnetFriendLocation;
+
+#define BNET_USER_TYPE_FRIEND       0x02
+
+typedef struct {
+    guint32 type;
+    // account name from friend list
+    char *account;
+    // information directly from friend list
+    BnetFriendStatus status;
+    BnetFriendLocation location;
+    BnetProductID product;
+    char *location_name;
+
+    // whether we are waiting for a /whois on this user
+    // for the friend list
+    BnetFriendStatus automated_lookup;
+    // from /whois (if available)
+    // when a whois returns "away" or "dnd" message
+    gchar *dnd_stored_status;
+    gchar *away_stored_status;
+    // whether this account is on the Battle.net friend list
+    gboolean on_list;
+    
+    // prpl buddy object
+    PurpleBuddy *buddy;
+} BnetFriendInfo;
+
+/*
+typedef struct {
+    PurpleConversation *conv;
+    BnetCommandID cmd;
+    BnetPacketID pkt_id;
+    BnetPacket *pkt;
+    BnetPacketID pkt_response;
+    int cookie;
+    BnetQueueFunc cb;
+    gboolean responded;
+    int delay;
+} BnetQueueElement;
+*/
+
+typedef enum {
+    BNET_WID_USERRECORD = 0x04,
+    BNET_WID_CLANRECORD = 0x08,
+} BnetW3GeneralSubcommand;
+
+#define BNET_W3RECORD_USER_SOLO 'SOLO'
+#define BNET_W3RECORD_USER_TEAM 'TEAM'
+#define BNET_W3RECORD_USER_FFA  'FFA '
+#define BNET_W3RECORD_RACE_ORC  'ORC '
+#define BNET_W3RECORD_RACE_HUMA 'HUMA'
+#define BNET_W3RECORD_RACE_SCOU 'SCOU'
+#define BNET_W3RECORD_RACE_NELF 'NELF'
+#define BNET_W3RECORD_RACE_RAND 'RAND'
+#define BNET_W3RECORD_RACE_TRNA 'TRNA'
+#define BNET_W3RECORD_TEAM_2VS2 '2VS2'
+#define BNET_W3RECORD_TEAM_3VS3 '3VS3'
+#define BNET_W3RECORD_TEAM_4VS4 '4VS4'
+#define BNET_W3RECORD_CLAN_SOLO 'CLNS'
+#define BNET_W3RECORD_CLAN_2VS2 'CLN2'
+#define BNET_W3RECORD_CLAN_3VS3 'CLN3'
+#define BNET_W3RECORD_CLAN_4VS4 'CLN4'
+typedef guint32 BnetW3RecordType;
+
+typedef enum {
+    // the user closed the lookup dialog: don't notify anymore
+    BNET_LOOKUP_INFO_AWAIT_CANCELLED           = 0x0001,
+    // not waiting for anything
+    BNET_LOOKUP_INFO_AWAIT_NONE                = 0x0000,
+    // waiting for channel list (NOT USED -- this is already stored)
+    //BNET_LOOKUP_INFO_AWAIT_CHANNEL_LIST        = 0x0010,
+    // waiting for friends list (NOT USED -- this is already stored)
+    //BNET_LOOKUP_INFO_AWAIT_FRIENDS_LIST        = 0x0020,
+    // waiting for WarCraft III clan list (NOT USED -- this is already stored)
+    //BNET_LOOKUP_INFO_AWAIT_W3_CLAN_LIST        = 0x0040,
+    // waiting for possible /whois statuses responses (away and dnd)
+    BNET_LOOKUP_INFO_AWAIT_WHOIS_STATUSES_AWAY = 0x0100,
+    BNET_LOOKUP_INFO_AWAIT_WHOIS_STATUSES_DND  = 0x0200,
+    // both of the above
+    BNET_LOOKUP_INFO_AWAIT_WHOIS_STATUSES      = 0x0300,
+    // waiting for /whois request (returns EID_INFO)
+    BNET_LOOKUP_INFO_AWAIT_WHOIS               = 0x0400,
+    // waiting for SID_READUSERDATA request
+    BNET_LOOKUP_INFO_AWAIT_USER_DATA           = 0x0800,
+    // waiting for SID_W3PROFILE request
+    BNET_LOOKUP_INFO_AWAIT_W3_USER_PROFILE     = 0x1000,
+    // waiting for SID_WARCRAFTGENERAL.WID_USERRECORD request
+    BNET_LOOKUP_INFO_AWAIT_W3_USER_STATS       = 0x2000,
+    // waiting for SID_WARCRAFTGENERAL.WID_CLANRECORD request
+    BNET_LOOKUP_INFO_AWAIT_W3_CLAN_STATS       = 0x4000,
+    // waiting for SID_CLANMEMBERINFO request
+    BNET_LOOKUP_INFO_AWAIT_W3_CLAN_MI          = 0x8000,
+} BnetLookupInfoAwait;
+
 
 // stores socket connection data for a specific socket
 struct SocketData {
@@ -578,11 +637,21 @@ typedef struct {
     // current channel members
     GList *channel_users;
     
-    // whois data:
+    // lookup_info data:
     // the username of the user we are currently looking up
-    gchar *lookup_user;
+    gchar *lookup_info_user;
     // libpurple's data for the current look-up
     PurpleNotifyUserInfo *lookup_info;
+    // flags keeping track of what things we are awaiting from Battle.net
+    BnetLookupInfoAwait lookup_info_await;
+    // whether the first section has been added yet (so that it doesn't start with a line break)
+    gboolean lookup_info_first_section;
+    // whether we got location/product information yet (so it is not duplicated)
+    gboolean lookup_info_got_locprod;
+    // whether we found this user's clan
+    gboolean lookup_info_found_clan;
+    // the clan tag (so it is not duplicated, and so that we can make further clan-based requests)
+    BnetClanTag lookup_info_clan;
     
     // a GList<BnetUserDataRequest> - each userdata request
     GList *userdata_requests;
@@ -922,7 +991,7 @@ static void bnet_recv_CLANMEMBERLIST(BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_recv_CLANMEMBERREMOVED(BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_recv_CLANMEMBERSTATUSCHANGE(BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_recv_CLANMEMBERRANKCHANGE(BnetConnectionData *bnet, BnetPacket *pkt);
-static void bnet_recv_CLANMEMBERINFORMATION(BnetConnectionData *bnet, BnetPacket *pkt);
+static void bnet_recv_CLANMEMBERINFO(BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_recv_event_SHOWUSER(BnetConnectionData *bnet, PurpleConvChat *chat,
             const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping);
 static void bnet_recv_event_JOIN(BnetConnectionData *bnet, PurpleConvChat *chat,
@@ -972,13 +1041,15 @@ static PurpleCmdRet bnet_handle_cmd(PurpleConversation *conv, const gchar *cmdwo
             gchar **args, gchar **error, void *data);
 static double bnet_get_tz_bias(void);
 static char *bnet_format_time(guint64 unixtime);
-static char *bnet_format_filetime(char *ftime_str);
+static char *bnet_format_filetime_string(char *ftime_str);
+static char *bnet_format_filetime(guint64 filetime);
 static guint64 bnet_get_filetime(time_t time);
 static char *bnet_format_strsec(char *secs_str);
 static char *bnet_locale_to_utf8(const char *input);
 static char *bnet_locale_from_utf8(const char *input);
 static gchar *bnet_escape_text(const gchar *text, int length, gboolean replace_linebreaks);
 static void bnet_find_detached_buddies(BnetConnectionData *bnet);
+static void bnet_do_whois(const BnetConnectionData *bnet, const char *who);
 static void bnet_friend_update(const BnetConnectionData *bnet, int index,
             BnetFriendInfo *bfi, BnetFriendStatus status,
             BnetFriendLocation location, BnetProductID product_id,
@@ -987,10 +1058,17 @@ static void bnet_close(PurpleConnection *gc);
 static int  bnet_send_raw(PurpleConnection *gc, const char *buf, int len);
 static int  bnet_send_whisper(PurpleConnection *gc, const char *who,
             const char *message, PurpleMessageFlags flags);
-static void bnet_get_info(PurpleConnection *gc, const char *who);
-static void bnet_whois_complete(gpointer user_data);
-static void bnet_whois_user(const BnetConnectionData *bnet, const char *who);
-static void bnet_profiledata_user(BnetConnectionData *bnet, const char *who);
+static void bnet_lookup_info(PurpleConnection *gc, const char *who);
+static void bnet_lookup_info_close(gpointer user_data);
+static gboolean bnet_lookup_info_cached_channel(BnetConnectionData *bnet);
+static gboolean bnet_lookup_info_cached_friends(BnetConnectionData *bnet);
+static gboolean bnet_lookup_info_cached_clan(BnetConnectionData *bnet);
+static void bnet_lookup_info_whois(BnetConnectionData *bnet);
+static void bnet_lookup_info_user_data(BnetConnectionData *bnet);
+static void bnet_lookup_info_w3_user_profile(BnetConnectionData *bnet);
+static void bnet_lookup_info_w3_user_stats(BnetConnectionData *bnet);
+static void bnet_lookup_info_w3_clan_stats(BnetConnectionData *bnet);
+static void bnet_lookup_info_w3_clan_mi(BnetConnectionData *bnet);
 static void bnet_action_set_motd_cb(gpointer data);
 static gint bnet_news_item_sort(gconstpointer a, gconstpointer b);
 static void bnet_action_show_news(PurplePluginAction *action);
@@ -1000,7 +1078,6 @@ static void bnet_profile_get_for_edit(BnetConnectionData *bnet);
 static void bnet_profile_show_write_dialog(BnetConnectionData *bnet,
             const char *psex, const char *page, const char *ploc, const char *pdescr);
 static void bnet_profile_write_cb(gpointer data);
-static gboolean bnet_channeldata_user(BnetConnectionData *bnet, const char *who);
 static GHashTable *bnet_chat_info_defaults(PurpleConnection *gc, const char *chat_name);
 static GList *bnet_chat_info(PurpleConnection *gc);
 static char *bnet_channel_message_parse(char *stats_data, BnetChatEventFlags flags, int ping);
