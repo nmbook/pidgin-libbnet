@@ -1608,8 +1608,18 @@ static void
 bnet_enter_chat(BnetConnectionData *bnet)
 {
     if (bnet_is_d2(bnet)) {
-        bnet_send_GETCHANNELLIST(bnet);
-        bnet_send_ENTERCHAT(bnet);
+        /*if (purple_account_get_bool(bnet->account, "use_d2realm", FASLE)) {
+            const gchar *d2realm_name = purple_account_get_string(bnet->account, "d2realm_name", "");
+            const gchar *d2realm_pass = purple_account_get_string(bnet->account, "d2realm_pass", "password");
+            if (d2realm_name && strlen(d2realm_name) > 0) {
+                bnet_send_LOGONREALMEX(bnet, bnet->client_cookie, d2realm_name, d2realm_pass);
+            } else {
+                bnet_send_QUERYREALMS2(bnet);
+            }
+        } else {*/
+            bnet_send_GETCHANNELLIST(bnet);
+            bnet_send_ENTERCHAT(bnet);
+        //}
     } else if (bnet_is_w3(bnet)) {
         bnet->clan_info = bnet_clan_info_new();
         // NETGAMEPORT
@@ -2334,6 +2344,12 @@ bnet_recv_event_WHISPERSENT(BnetConnectionData *bnet, PurpleConvChat *chat,
 {
     if (bnet->last_sent_to != NULL) {
         bnet->awaiting_whisper_confirm = FALSE;
+    }
+    if (strcmp(name, "your friends") == 0) {
+        PurpleConnection *gc = bnet->account->gc;
+        gchar *esc_text = bnet_escape_text(text, -1, FALSE);
+        serv_got_chat_in(gc, bnet->channel_id, name, PURPLE_MESSAGE_RECV | PURPLE_MESSAGE_WHISPER, esc_text, time(NULL));
+        g_free(esc_text);
     }
 }
 
@@ -4942,6 +4958,10 @@ bnet_parse_packet(BnetConnectionData *bnet, const guint8 packet_id, const gchar 
         case BNET_SID_NEWS_INFO:
             bnet_recv_NEWS_INFO(bnet, pkt);
             break;
+        case BNET_SID_OPTIONALWORK:
+        case BNET_SID_REQUIREDWORK:
+            // handle and ignore
+            break;
         case BNET_SID_AUTH_INFO:
             bnet_recv_AUTH_INFO(bnet, pkt);
             break;
@@ -5270,12 +5290,6 @@ bnet_handle_cmd(PurpleConversation *conv, const gchar *cmdword,
 
     if (!c)
         return PURPLE_CMD_RET_FAILED;
-
-    // TODO: remove this command...
-    if (c->id == 10231) {
-        bnet_send_WRITEUSERDATA_2(bnet, args[0], args[1]);
-        return PURPLE_CMD_RET_OK;
-    }
 
     if (!args) {
         s_args = g_malloc0(1);
