@@ -7533,6 +7533,12 @@ bnet_actions(PurplePlugin *plugin, gpointer context)
     return list;
 }
 
+static void
+bnet_rename_group(PurpleConnection *gc, const char *old_name, PurpleGroup *group, GList *moved_buddies)
+{
+    // ignore
+}
+
 static PurplePluginProtocolInfo prpl_info =
 {
     OPT_PROTO_CHAT_TOPIC |
@@ -7579,7 +7585,7 @@ static PurplePluginProtocolInfo prpl_info =
     NULL,                               /* get_cb_away */
     NULL,                               /* alias_buddy */
     NULL,                               /* group_buddy */
-    NULL,                               /* rename_group */
+    bnet_rename_group,                  /* rename_group */
     bnet_buddy_free,                    /* buddy_free */
     NULL,                               /* convo_closed */
     bnet_normalize,                     /* normalize */
