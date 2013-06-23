@@ -130,6 +130,7 @@ typedef enum {
     BNET_SID_CHATEVENT               = 0x0F,
     BNET_SID_LEAVECHAT               = 0x10,
     BNET_SID_LOCALEINFO              = 0x12,
+    BNET_SID_FLOODDETECTED           = 0x13,
     BNET_SID_UDPPINGRESPONSE         = 0x14,
     BNET_SID_MESSAGEBOX              = 0x19,
     BNET_SID_LOGONCHALLENGEEX        = 0x1D,
@@ -544,7 +545,7 @@ typedef struct {
     
     // socket data:
     // BNET
-    struct SocketData sbnet;
+    struct SocketData sbncs;
     // BNLS
     struct SocketData sbnls;
     
@@ -685,6 +686,8 @@ typedef struct {
     PurpleRequestFields *set_motd_fields;
     // if clan members are in the prpl buddy list, so we know whether we can free them
     gboolean clan_members_in_blist;
+    // used to preserve the in-channel display of the clan motd.
+    gboolean got_channel_motd;
     
     // status data:
     // away: are we currently away?
@@ -856,39 +859,6 @@ struct BnetCommand {
     { 0, 0, NULL, NULL, NULL }
 };
 
-typedef void (*BnetChatEventFunction)(BnetConnectionData *, PurpleConvChat *, const gchar *,
-        const gchar *, BnetChatEventFlags, gint32);
-
-struct BnetChatEvent {
-    BnetChatEventID id;
-    BnetChatEventFunction fn;
-    gboolean text_is_statstring;
-} bnet_events[] = {
-    { 0, NULL, FALSE },
-    { BNET_EID_SHOWUSER, NULL, TRUE },
-    { BNET_EID_JOIN, NULL, TRUE },
-    { BNET_EID_LEAVE, NULL, TRUE },
-    { BNET_EID_WHISPER, NULL, FALSE },
-    { BNET_EID_TALK, NULL, FALSE },
-    { BNET_EID_BROADCAST, NULL, FALSE },
-    { BNET_EID_CHANNEL, NULL, FALSE },
-    { 0, NULL, FALSE },
-    { BNET_EID_USERFLAGS, NULL, TRUE },
-    { BNET_EID_WHISPERSENT, NULL, FALSE },
-    { 0, NULL, FALSE },
-    { 0, NULL, FALSE },
-    { BNET_EID_CHANNELFULL, NULL, FALSE },
-    { BNET_EID_CHANNELDOESNOTEXIST, NULL, FALSE },
-    { BNET_EID_CHANNELRESTRICTED, NULL, FALSE },
-    { 0, NULL, FALSE },
-    { 0, NULL, FALSE },
-    { BNET_EID_INFO, NULL, FALSE },
-    { BNET_EID_ERROR, NULL, FALSE },
-    { 0, NULL, FALSE },
-    { 0, NULL, FALSE },
-    { 0, NULL, FALSE },
-    { BNET_EID_EMOTE, NULL, FALSE },
-};
 
 static void bnet_channel_user_free(BnetChannelUser *bcu);
 static void bnet_friend_info_free(BnetFriendInfo *bfi);
@@ -939,8 +909,6 @@ static int  bnet_send_READUSERDATA(const BnetConnectionData *bnet,
             int request_cookie, const char *username, char **keys);
 static int  bnet_send_WRITEUSERDATA(const BnetConnectionData *bnet,
             const char *sex, const char *age, const char *location, const char *description);
-static int  bnet_send_WRITEUSERDATA_2(const BnetConnectionData *bnet,
-            const char *key, const char *val);
 static int  bnet_send_NEWS_INFO(const BnetConnectionData *bnet);
 static int  bnet_send_AUTH_INFO(const BnetConnectionData *bnet);
 static int  bnet_send_AUTH_CHECK(const BnetConnectionData *bnet,
@@ -1027,12 +995,28 @@ static void bnet_recv_event_CHANNELDOESNOTEXIST(BnetConnectionData *bnet, Purple
             const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping);
 static void bnet_recv_event_CHANNELRESTRICTED(BnetConnectionData *bnet, PurpleConvChat *chat,
             const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping);
+static gboolean bnet_recv_event_INFO_whois(BnetConnectionData *bnet, GRegex *regex,
+            const gchar *text, GMatchInfo *mi);
+static gboolean bnet_recv_event_INFO_away_response(BnetConnectionData *bnet, GRegex *regex,
+            const gchar *text, GMatchInfo *mi);
+static gboolean bnet_recv_event_INFO_dnd_response(BnetConnectionData *bnet, GRegex *regex,
+            const gchar *text, GMatchInfo *mi);
+static gboolean bnet_recv_event_INFO_away_state(BnetConnectionData *bnet, GRegex *regex,
+            const gchar *text, GMatchInfo *mi);
+static gboolean bnet_recv_event_INFO_dnd_state(BnetConnectionData *bnet, GRegex *regex,
+            const gchar *text, GMatchInfo *mi);
+static gboolean bnet_recv_event_INFO_dnd_error(BnetConnectionData *bnet, GRegex *regex,
+            const gchar *text, GMatchInfo *mi);
+static gboolean bnet_recv_event_INFO_ban(BnetConnectionData *bnet, GRegex *regex,
+            const gchar *text, GMatchInfo *mi);
 static void bnet_recv_event_INFO(BnetConnectionData *bnet, PurpleConvChat *chat,
             const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping);
 static void bnet_recv_event_ERROR(BnetConnectionData *bnet, PurpleConvChat *chat,
             const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping);
 static void bnet_recv_event_EMOTE(BnetConnectionData *bnet, PurpleConvChat *chat,
             const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping);
+static gboolean bnet_parse_telnet_line_event(BnetConnectionData *bnet, GRegex *regex,
+            const gchar *text, GMatchInfo *mi);
 static void bnet_parse_telnet_line(BnetConnectionData *bnet, const gchar *line);
 static void bnet_parse_packet(BnetConnectionData *bnet, const guint8 packet_id,
             const gchar *packet_start, const guint16 packet_len);
@@ -1047,7 +1031,7 @@ static void bnet_account_lockout_set(BnetConnectionData *bnet);
 static void bnet_account_lockout_cancel(BnetConnectionData *bnet);
 static gboolean bnet_account_lockout_timer(BnetConnectionData *bnet);
 static void bnet_request_set_email_cb(gpointer data);
-static void bnet_request_set_email(BnetConnectionData *bnet);
+static void bnet_request_set_email(BnetConnectionData *bnet, gboolean nomatch_error);
 static void bnet_clan_invite_accept_cb(void *data, int act_index);
 static void bnet_clan_invite_decline_cb(void *data, int act_index);
 static gint bnet_channel_user_compare(gconstpointer a, gconstpointer b);
@@ -1124,6 +1108,79 @@ static BnetVersioningSystem bnet_get_versioningsystem(const BnetConnectionData *
 static int bnet_get_key_count(const BnetConnectionData *bnet);
 static GList *bnet_actions(PurplePlugin *plugin, gpointer context);
 static void init_plugin(PurplePlugin *plugin);
+
+typedef void (*BnetChatEventFunction)(BnetConnectionData *, PurpleConvChat *, const gchar *,
+        const gchar *, BnetChatEventFlags, gint32);
+
+struct BnetChatEvent {
+    BnetChatEventID id;
+    BnetChatEventFunction fn;
+    gboolean text_is_statstring;
+} bnet_events[] = {
+    { 0, NULL, FALSE },
+    { BNET_EID_SHOWUSER, bnet_recv_event_SHOWUSER, TRUE },
+    { BNET_EID_JOIN, bnet_recv_event_JOIN, TRUE },
+    { BNET_EID_LEAVE, bnet_recv_event_LEAVE, TRUE },
+    { BNET_EID_WHISPER, bnet_recv_event_WHISPER, FALSE },
+    { BNET_EID_TALK, bnet_recv_event_TALK, FALSE },
+    { BNET_EID_BROADCAST, bnet_recv_event_BROADCAST, FALSE },
+    { BNET_EID_CHANNEL, bnet_recv_event_CHANNEL, FALSE },
+    { 0, NULL, FALSE },
+    { BNET_EID_USERFLAGS, bnet_recv_event_USERFLAGS, TRUE },
+    { BNET_EID_WHISPERSENT, bnet_recv_event_WHISPERSENT, FALSE },
+    { 0, NULL, FALSE },
+    { 0, NULL, FALSE },
+    { BNET_EID_CHANNELFULL, bnet_recv_event_CHANNELFULL, FALSE },
+    { BNET_EID_CHANNELDOESNOTEXIST, bnet_recv_event_CHANNELDOESNOTEXIST, FALSE },
+    { BNET_EID_CHANNELRESTRICTED, bnet_recv_event_CHANNELRESTRICTED, FALSE },
+    { 0, NULL, FALSE },
+    { 0, NULL, FALSE },
+    { BNET_EID_INFO, bnet_recv_event_INFO, FALSE },
+    { BNET_EID_ERROR, bnet_recv_event_ERROR, FALSE },
+    { 0, NULL, FALSE },
+    { 0, NULL, FALSE },
+    { 0, NULL, FALSE },
+    { BNET_EID_EMOTE, bnet_recv_event_EMOTE, FALSE },
+};
+
+typedef gboolean (*BnetRegexMatchFunction)(BnetConnectionData *, GRegex *, const gchar *, GMatchInfo *);
+
+struct BnetRegexStore {
+    GRegex *regex;
+    gchar *regex_str;
+    BnetChatEventID event_id;
+    BnetRegexMatchFunction fn;
+    gchar *arg_format;
+} bnet_regex_store[] = {
+    // TELNET LINE
+    { NULL, "(\\d{4}) \\S+(?:\\s(.+)|)", 0, bnet_parse_telnet_line_event, NULL },
+    
+    // TELNET EID EVENT
+    { NULL, "(\\S+) (\\d+) \\[(\\S+)\\]", BNET_TELNET_EID, NULL, "nfp" },
+    { NULL, "(\\S+) (\\d+)", BNET_TELNET_EID, NULL, "nf" },
+    { NULL, "(\\S+) (\\d+) \"(.*)\"", BNET_TELNET_EID, NULL, "nft" },
+    { NULL, "\"(.*)\"", BNET_TELNET_EID, NULL, "t" },
+
+    // WHOIS RESPONSE
+    { NULL, "(?:You are |)(\\S+)(?:,| is) using (.+) in (.+)\\.", BNET_EID_INFO, bnet_recv_event_INFO_whois, NULL },
+    // WHOIS AWAY RESPONSE
+    // WHISPER AWAY RESPONSE
+    { NULL, "(?:You are|(\\S+) is) away \\((.+)\\)", BNET_EID_INFO, bnet_recv_event_INFO_away_response, NULL },
+    // WHOIS DND RESPONSE
+    { NULL, "(?:You are|(\\S+) is) refusing messages \\((.+)\\)", BNET_EID_INFO, bnet_recv_event_INFO_dnd_response, NULL },
+    // AWAY RESPONSE
+    // STILL AWAY RESPONSE
+    { NULL, "You are (still|now|no longer) marked as (?:being |)away\\.", BNET_EID_INFO, bnet_recv_event_INFO_away_state, NULL },
+    // DND RESPONSE
+    { NULL, "Do Not Disturb mode (engaged|cancelled)\\.", BNET_EID_INFO, bnet_recv_event_INFO_dnd_state, NULL },
+    // WHISPER DND ERROR
+    { NULL, "(\\S+) is unavailable \\((.+)\\)", BNET_EID_INFO, bnet_recv_event_INFO_dnd_error, NULL },
+    // BAN MESSAGE
+    { NULL, "(\\S+) was banned by (\\S+)(?: \\((.+)\\)|)\\.", BNET_EID_INFO, bnet_recv_event_INFO_ban, NULL },
+
+    // NULL TERMINATOR
+    { NULL, NULL, 0, NULL, NULL },
+};
 
 #endif
 
