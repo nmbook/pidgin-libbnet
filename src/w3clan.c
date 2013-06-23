@@ -60,6 +60,19 @@ struct _BnetClanInfo {
     GHashTable *cookie_list;
 };
 
+static void
+_g_list_free_full(GList *list, GDestroyNotify free_fn)
+{
+    GList *el = g_list_first(list);
+    while (el != NULL) {
+        if (el->data != NULL) {
+            free_fn(el->data);
+        }
+        el = g_list_next(el);
+    }
+    g_list_free(list);
+}
+
 /*
  * Converts DWORD to tag-string
  * '\0ToB' -> "BoT\0"
@@ -214,7 +227,7 @@ bnet_clan_info_leave_clan(BnetClanInfo *info)
         }
         bcli->motd = NULL;
         if (bcli->members != NULL) {
-            g_list_free_full(bcli->members, (GDestroyNotify)bnet_clan_member_free);
+            _g_list_free_full(bcli->members, (GDestroyNotify)bnet_clan_member_free);
         }
         bcli->members = NULL;
     }
@@ -230,7 +243,7 @@ bnet_clan_info_free(BnetClanInfo *info, gboolean free_members)
             g_free(bcli->motd);
         }
         if (free_members && bcli->members != NULL) {
-            g_list_free_full(bcli->members, (GDestroyNotify)bnet_clan_member_free);
+            _g_list_free_full(bcli->members, (GDestroyNotify)bnet_clan_member_free);
         }
         g_free(info);
     }
@@ -283,7 +296,7 @@ bnet_clan_info_set_members(BnetClanInfo *info, GList *members, gboolean free_old
 {
     struct _BnetClanInfo *bcli = (struct _BnetClanInfo *)info;
     if (free_old_list) {
-        g_list_free_full(bcli->members, (GDestroyNotify)bnet_clan_member_free);
+        _g_list_free_full(bcli->members, (GDestroyNotify)bnet_clan_member_free);
     }
     bcli->members = members;
 }

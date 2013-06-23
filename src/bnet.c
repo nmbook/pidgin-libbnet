@@ -1672,6 +1672,7 @@ bnet_account_lockout_timer(BnetConnectionData *bnet)
     purple_connection_error_reason(bnet->account->gc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
             "Logging on is taking too long. You are likely locked out of this account. Try again in 30 minutes.");
 
+    purple_timeout_remove(bnet->alo_handle);
     bnet->alo_handle = 0;
     
     return FALSE;
@@ -2227,7 +2228,6 @@ bnet_recv_event_CHANNEL(BnetConnectionData *bnet, PurpleConvChat *chat,
     PurpleConnection *gc = bnet->account->gc;
     const gchar *text_normalized;
     int chat_id;
-    char *room_trying = NULL;
     const char *norm = NULL;
     int trying_chat_id = 0;
 
@@ -2263,15 +2263,13 @@ bnet_recv_event_CHANNEL(BnetConnectionData *bnet, PurpleConvChat *chat,
     }*/
 
     // the only way to get out of channel_first_join now is to actually have *tried* to join this channel
-    if (bnet->join_attempt != NULL) {
-        room_trying = g_hash_table_lookup(bnet->join_attempt, "channel");
-        if (room_trying != NULL) {
-            norm = bnet_normalize(bnet->account, room_trying);
-            trying_chat_id = g_str_hash(norm);
-            if (trying_chat_id == chat_id) {
-                bnet->channel_first_join = FALSE;
-                bnet->join_attempt = NULL;
-            }
+    if (bnet->joining_channel != NULL) {
+        norm = bnet_normalize(bnet->account, bnet->joining_channel);
+        trying_chat_id = g_str_hash(norm);
+        if (trying_chat_id == chat_id) {
+            bnet->channel_first_join = FALSE;
+            g_free(bnet->joining_channel);
+            bnet->joining_channel = NULL;
         }
     }
 
@@ -2295,7 +2293,8 @@ bnet_recv_event_CHANNEL(BnetConnectionData *bnet, PurpleConvChat *chat,
     // the silent channel check: we don't get ourself in one case, when we are in a silent channel
     if ((bnet->channel_flags & BNET_CHAN_FLAG_SILENT) == BNET_CHAN_FLAG_SILENT) {
         bnet->channel_first_join = FALSE;
-        bnet->join_attempt = NULL;
+        g_free(bnet->joining_channel);
+        bnet->joining_channel = NULL;
         serv_got_joined_chat(gc, chat_id, text);
     }
 }
@@ -2341,29 +2340,33 @@ static void
 bnet_recv_event_CHANNELFULL(BnetConnectionData *bnet, PurpleConvChat *chat,
         const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping)
 {
-    PurpleConnection *gc = bnet->account->gc;
+    //PurpleConnection *gc = bnet->account->gc;
+    purple_debug_info("bnet", "CHANNEL IS FULL %s %x %dms: %s\n",
+            name, flags, ping, text);
 
-    purple_serv_got_join_chat_failed(gc, bnet->join_attempt);
+    //purple_serv_got_join_chat_failed(gc, bnet->join_attempt);
 }
 
 static void
 bnet_recv_event_CHANNELDOESNOTEXIST(BnetConnectionData *bnet, PurpleConvChat *chat,
         const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping)
 {
-    PurpleConnection *gc = bnet->account->gc;
+    //PurpleConnection *gc = bnet->account->gc;
+    purple_debug_info("bnet", "CHANNEL DOES NOT EXIST %s %x %dms: %s\n",
+            name, flags, ping, text);
 
-    purple_serv_got_join_chat_failed(gc, bnet->join_attempt);
+    //purple_serv_got_join_chat_failed(gc, bnet->join_attempt);
 }
 
 static void
 bnet_recv_event_CHANNELRESTRICTED(BnetConnectionData *bnet, PurpleConvChat *chat,
         const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping)
 {
-    PurpleConnection *gc = bnet->account->gc;
+    //PurpleConnection *gc = bnet->account->gc;
     purple_debug_info("bnet", "CHANNEL IS RESTRICTED %s %x %dms: %s\n",
             name, flags, ping, text);
 
-    purple_serv_got_join_chat_failed(gc, bnet->join_attempt);
+    //purple_serv_got_join_chat_failed(gc, bnet->join_attempt);
 }
 
 static gboolean
@@ -5726,6 +5729,11 @@ bnet_close(PurpleConnection *gc)
             g_free(bnet->last_sent_to);
             bnet->last_sent_to = NULL;
         }
+        if (bnet->joining_channel != NULL) {
+            purple_debug_info("bnet", "free joining_channel\n");
+            g_free(bnet->joining_channel);
+            bnet->joining_channel = NULL;
+        }
         bnet_lookup_info_close(bnet);
         g_free(bnet);
         bnet = NULL;
@@ -6913,19 +6921,6 @@ bnet_channel_flags_to_prpl_flags(BnetChatEventFlags flags)
     return result;
 }
 
-static gchar *
-bnet_get_chat_name(GHashTable *components)
-{
-    gchar *room = g_hash_table_lookup(components, "channel");
-    if (room == NULL) {
-        room = g_hash_table_lookup(components, "name");
-        if (room == NULL) {
-            return NULL;
-        }
-    }
-    return room;
-}
-
 static void
 bnet_set_chat_topic(PurpleConnection *gc, int chat_id, const char *topic)
 {
@@ -6971,7 +6966,7 @@ bnet_join_chat(PurpleConnection *gc, GHashTable *components)
 
         bnet->channel_id = chat_id;
 
-        conv = serv_got_joined_chat(gc, chat_id, room);
+        conv = serv_got_joined_chat(gc, chat_id, bnet->channel_name);
 
         if (bnet->channel_users != NULL) {
             PurpleConvChat *chat = NULL;
@@ -7004,7 +6999,7 @@ bnet_join_chat(PurpleConnection *gc, GHashTable *components)
         return;
     }
 
-    bnet->join_attempt = components;
+    bnet->joining_channel = g_strdup(room);
 
     cmd = g_strdup_printf("/join %s", room);
     if (bnet->emulate_telnet) {
@@ -7097,11 +7092,11 @@ bnet_status_text(PurpleBuddy *b)
 {
     BnetUser *bfi = purple_buddy_get_protocol_data(b);
     if (bfi == NULL) {
-        return "Not on Battle.net's friend list.";
+        return g_strdup("Not on Battle.net's friend list.");
     } else if (bfi->type == BNET_USER_TYPE_FRIEND && ((BnetFriendInfo *)bfi)->away_stored_status != NULL) {
-        return ((BnetFriendInfo *)bfi)->away_stored_status;
+        return g_strdup(((BnetFriendInfo *)bfi)->away_stored_status);
     } else if (bfi->type == BNET_USER_TYPE_FRIEND && ((BnetFriendInfo *)bfi)->dnd_stored_status != NULL) {
-        return ((BnetFriendInfo *)bfi)->dnd_stored_status;
+        return g_strdup(((BnetFriendInfo *)bfi)->dnd_stored_status);
     } else {
         return NULL;
     }
@@ -7745,7 +7740,7 @@ static PurplePluginProtocolInfo prpl_info =
     NULL,                               /* set_permit_deny */
     bnet_join_chat,                     /* join_chat */
     NULL,                               /* reject_chat */
-    bnet_get_chat_name,                 /* get_chat_name */
+    NULL,                               /* get_chat_name */
     NULL,                               /* chat_invite */
     NULL,                               /* chat_leave */
     NULL,                               /* chat_whisper */

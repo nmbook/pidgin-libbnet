@@ -636,8 +636,8 @@ typedef struct {
     gboolean channel_first_join;
     // we are waiting for "ourself" in the current channel, to pass the whole list to libpurple
     gboolean channel_seen_self;
-    // hash table containing join attempt
-    GHashTable *join_attempt;
+    // join attempting
+    gchar *joining_channel;
     // hash of current channel name
     int channel_id;
     // current channel name
@@ -858,7 +858,6 @@ struct BnetCommand {
             "nobeep:  (no text-bots exist anymore) Disable beep characters for text bots." },
     { 0, 0, NULL, NULL, NULL }
 };
-
 
 static void bnet_channel_user_free(BnetChannelUser *bcu);
 static void bnet_friend_info_free(BnetFriendInfo *bfi);
