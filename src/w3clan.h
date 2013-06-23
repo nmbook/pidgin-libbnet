@@ -79,7 +79,7 @@ void bnet_clan_info_set_motd(BnetClanInfo *info, gchar *motd);
 gchar *bnet_clan_info_get_name(const BnetClanInfo *info);
 void bnet_clan_info_set_name(BnetClanInfo *info, gchar *name);
 void bnet_clan_info_set_members(BnetClanInfo *info, GList *members, gboolean free_old_list);
-BnetClanMember *bnet_clan_info_get_member(const BnetClanInfo *info, gchar *name);
+BnetClanMember *bnet_clan_info_get_member(const BnetClanInfo *info, const gchar *name);
 
 BnetClanMember *bnet_clan_member_new(gchar *name, BnetClanMemberRank rank, BnetClanMemberStatus status, gchar *location);
 gchar *bnet_clan_member_get_name(const BnetClanMember *member);

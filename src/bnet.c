@@ -265,12 +265,9 @@ bnet_bnls_send_LOGONCHALLENGE(const BnetConnectionData *bnet)
     const char *username = bnet->username;
     const char *password = purple_account_get_password(bnet->account);
 
-    guint namelen = strlen(username);
-    guint passlen = strlen(password);
-
     pkt = bnet_packet_create(BNET_PACKET_BNLS);
-    bnet_packet_insert(pkt, username, namelen + 1);
-    bnet_packet_insert(pkt, password, passlen + 1);
+    bnet_packet_insert(pkt, username, BNET_SIZE_CSTRING);
+    bnet_packet_insert(pkt, password, BNET_SIZE_CSTRING);
 
     ret = bnet_packet_send_bnls(pkt, BNET_BNLS_LOGONCHALLENGE, bnet->sbnls.fd);
 
@@ -308,8 +305,8 @@ bnet_bnls_send_VERSIONCHECKEX2(const BnetConnectionData *bnet,
     bnet_packet_insert(pkt, &bnls_flags, BNET_SIZE_DWORD);
     bnet_packet_insert(pkt, &bnls_flags, BNET_SIZE_DWORD);
     bnet_packet_insert(pkt, &mpq_ft, BNET_SIZE_FILETIME);
-    bnet_packet_insert(pkt, mpq_fn, strlen(mpq_fn) + 1);
-    bnet_packet_insert(pkt, checksum_formula, strlen(checksum_formula) + 1);
+    bnet_packet_insert(pkt, mpq_fn, BNET_SIZE_CSTRING);
+    bnet_packet_insert(pkt, checksum_formula, BNET_SIZE_CSTRING);
 
     ret = bnet_packet_send_bnls(pkt, BNET_BNLS_VERSIONCHECKEX2, bnet->sbnls.fd);
 
@@ -690,7 +687,7 @@ bnet_send_telnet_line(const BnetConnectionData *bnet, const char *line)
 
     ret = write(bnet->sbncs.fd, tmp_buffer, length + 2);
 
-    purple_debug_misc("bnet", "C>S: %s\n", line);
+    purple_debug_misc("bnet", "TELNET C>S: %s\n", line);
 
     return ret;
 }
@@ -755,7 +752,7 @@ bnet_send_REPORTVERSION(const BnetConnectionData *bnet,
     bnet_packet_insert(pkt, &version_code, BNET_SIZE_DWORD);
     bnet_packet_insert(pkt, &exe_version, BNET_SIZE_DWORD);
     bnet_packet_insert(pkt, &exe_checksum, BNET_SIZE_DWORD);
-    bnet_packet_insert(pkt, exe_info, strlen(exe_info) + 1);
+    bnet_packet_insert(pkt, exe_info, BNET_SIZE_CSTRING);
 
     ret = bnet_packet_send(pkt, BNET_SID_REPORTVERSION, bnet->sbncs.fd);
 
@@ -770,7 +767,7 @@ bnet_send_ENTERCHAT(const BnetConnectionData *bnet)
     guint8 zero = 0;
 
     pkt = bnet_packet_create(BNET_PACKET_BNCS);
-    bnet_packet_insert(pkt, bnet->username, strlen(bnet->username) + 1);
+    bnet_packet_insert(pkt, bnet->username, BNET_SIZE_CSTRING);
     bnet_packet_insert(pkt, &zero, BNET_SIZE_BYTE);
 
     ret = bnet_packet_send(pkt, BNET_SID_ENTERCHAT, bnet->sbncs.fd);
@@ -802,7 +799,7 @@ bnet_send_JOINCHANNEL(const BnetConnectionData *bnet,
 
     pkt = bnet_packet_create(BNET_PACKET_BNCS);
     bnet_packet_insert(pkt, &chflags, BNET_SIZE_DWORD);
-    bnet_packet_insert(pkt, channel, strlen(channel) + 1);
+    bnet_packet_insert(pkt, channel, BNET_SIZE_CSTRING);
 
     ret = bnet_packet_send(pkt, BNET_SID_JOINCHANNEL, bnet->sbncs.fd);
 
@@ -823,7 +820,7 @@ bnet_send_JOINCHANNEL(const BnetConnectionData *bnet,
   qel->cookie = 0;
   qel->cb = cb;
 
-  bnet_packet_insert(qel->pkt, command, strlen(command) + 1);
+  bnet_packet_insert(qel->pkt, command, BNET_SIZE_CSTRING);
 
   bnet_queue(qel);
   }*/
@@ -835,7 +832,7 @@ bnet_send_CHATCOMMAND(const BnetConnectionData *bnet, const char *command)
     int ret = -1;
 
     pkt = bnet_packet_create(BNET_PACKET_BNCS);
-    bnet_packet_insert(pkt, command, strlen(command) + 1);
+    bnet_packet_insert(pkt, command, BNET_SIZE_CSTRING);
 
     ret = bnet_packet_send(pkt, BNET_SID_CHATCOMMAND, bnet->sbncs.fd);
 
@@ -890,8 +887,8 @@ bnet_send_CDKEY(const BnetConnectionData *bnet)
 
     pkt = bnet_packet_create(BNET_PACKET_BNCS);
     bnet_packet_insert(pkt, &key_spawn, BNET_SIZE_DWORD);
-    bnet_packet_insert(pkt, key_normalized, 14);
-    bnet_packet_insert(pkt, key_owner, strlen(key_owner) + 1); 
+    bnet_packet_insert(pkt, key_normalized, BNET_SIZE_CSTRING);
+    bnet_packet_insert(pkt, key_owner, BNET_SIZE_CSTRING);
 
     g_free(keys);
 
@@ -908,7 +905,7 @@ bnet_send_W3PROFILE(const BnetConnectionData *bnet, const guint32 cookie, const 
 
     pkt = bnet_packet_create(BNET_PACKET_BNCS);
     bnet_packet_insert(pkt, &cookie, BNET_SIZE_DWORD);
-    bnet_packet_insert(pkt, username, strlen(username) + 1);
+    bnet_packet_insert(pkt, username, BNET_SIZE_CSTRING);
 
     ret = bnet_packet_send(pkt, BNET_SID_W3PROFILE, bnet->sbncs.fd);
 
@@ -953,7 +950,7 @@ bnet_send_CDKEY2(const BnetConnectionData *bnet)
     bnet_packet_insert(pkt, &bnet->server_cookie, BNET_SIZE_DWORD);
     bnet_packet_insert(pkt, &bnet->client_cookie, BNET_SIZE_DWORD);
     bnet_packet_insert(pkt, keys->key_hash, SHA1_HASH_SIZE);
-    bnet_packet_insert(pkt, key_owner, strlen(key_owner) + 1); 
+    bnet_packet_insert(pkt, key_owner, BNET_SIZE_CSTRING);
 
     g_free(keys);
 
@@ -972,12 +969,9 @@ bnet_send_LOGONRESPONSE2(const BnetConnectionData *bnet)
     const char *username = bnet->username;
     const char *password = purple_account_get_password(bnet->account);
 
-    guint namelen = strlen(username);
-    guint passlen = strlen(password);
-
     sha.version = SHA1_TYPE_BROKEN;
     sha1_reset(&sha);
-    sha1_input(&sha, (guint8 *)password, passlen);
+    sha1_input(&sha, (guint8 *)password, strlen(password));
     sha1_digest(&sha, h1);
     sha1_reset(&sha);
     sha1_input(&sha, (guint8 *)&bnet->client_cookie, BNET_SIZE_DWORD);
@@ -989,7 +983,7 @@ bnet_send_LOGONRESPONSE2(const BnetConnectionData *bnet)
     bnet_packet_insert(pkt, &bnet->client_cookie, BNET_SIZE_DWORD);
     bnet_packet_insert(pkt, &bnet->server_cookie, BNET_SIZE_DWORD);
     bnet_packet_insert(pkt, h2, SHA1_HASH_SIZE);
-    bnet_packet_insert(pkt, username, namelen + 1);
+    bnet_packet_insert(pkt, username, BNET_SIZE_CSTRING);
 
     ret = bnet_packet_send(pkt, BNET_SID_LOGONRESPONSE2, bnet->sbncs.fd);
 
@@ -1006,17 +1000,14 @@ bnet_send_CREATEACCOUNT2(const BnetConnectionData *bnet)
     const char *username = bnet->username;
     const char *password = purple_account_get_password(bnet->account);
 
-    guint namelen = strlen(username);
-    guint passlen = strlen(password);
-
     sha.version = SHA1_TYPE_BROKEN;
     sha1_reset(&sha);
-    sha1_input(&sha, (const guint8 *)password, passlen);
+    sha1_input(&sha, (const guint8 *)password, strlen(password));
     sha1_digest(&sha, h1);
 
     pkt = bnet_packet_create(BNET_PACKET_BNCS);
     bnet_packet_insert(pkt, h1, SHA1_HASH_SIZE);
-    bnet_packet_insert(pkt, username, namelen + 1);
+    bnet_packet_insert(pkt, username, BNET_SIZE_CSTRING);
 
     ret = bnet_packet_send(pkt, BNET_SID_CREATEACCOUNT2, bnet->sbncs.fd);
 
@@ -1057,10 +1048,10 @@ bnet_send_LOCALEINFO(const BnetConnectionData *bnet)
     bnet_packet_insert(pkt, &system_lang, BNET_SIZE_DWORD);
     bnet_packet_insert(pkt, &product_lang, BNET_SIZE_DWORD);
     bnet_packet_insert(pkt, &product_lang, BNET_SIZE_DWORD);
-    bnet_packet_insert(pkt, lang_abbr, strlen(lang_abbr) + 1);
-    bnet_packet_insert(pkt, one, strlen(one) + 1);
-    bnet_packet_insert(pkt, country_abbr, strlen(country_abbr) + 1);
-    bnet_packet_insert(pkt, country, strlen(country) + 1);
+    bnet_packet_insert(pkt, lang_abbr, BNET_SIZE_CSTRING);
+    bnet_packet_insert(pkt, one, BNET_SIZE_CSTRING);
+    bnet_packet_insert(pkt, country_abbr, BNET_SIZE_CSTRING);
+    bnet_packet_insert(pkt, country, BNET_SIZE_CSTRING);
     ret = bnet_packet_send(pkt, BNET_SID_LOCALEINFO, bnet->sbncs.fd);
 
     return ret;
@@ -1083,8 +1074,8 @@ bnet_send_CLIENTID2(const BnetConnectionData *bnet)
     bnet_packet_insert(pkt, &zero, BNET_SIZE_DWORD); // reg version
     bnet_packet_insert(pkt, &zero, BNET_SIZE_DWORD); // account number
     bnet_packet_insert(pkt, &zero, BNET_SIZE_DWORD); // registration token
-    bnet_packet_insert(pkt, host, strlen(host) + 1); // LAN computer name
-    bnet_packet_insert(pkt, user, strlen(user) + 1); // LAN user name
+    bnet_packet_insert(pkt, host, BNET_SIZE_CSTRING); // LAN computer name
+    bnet_packet_insert(pkt, user, BNET_SIZE_CSTRING); // LAN user name
 
     ret = bnet_packet_send(pkt, BNET_SID_CLIENTID2, bnet->sbncs.fd);
 
@@ -1107,8 +1098,8 @@ bnet_send_CLIENTID(const BnetConnectionData *bnet)
     bnet_packet_insert(pkt, &zero, BNET_SIZE_DWORD); // reg authority
     bnet_packet_insert(pkt, &zero, BNET_SIZE_DWORD); // account number
     bnet_packet_insert(pkt, &zero, BNET_SIZE_DWORD); // registration token
-    bnet_packet_insert(pkt, host, strlen(host) + 1); // LAN computer name
-    bnet_packet_insert(pkt, user, strlen(user) + 1); // LAN user name
+    bnet_packet_insert(pkt, host, BNET_SIZE_CSTRING); // LAN computer name
+    bnet_packet_insert(pkt, user, BNET_SIZE_CSTRING); // LAN user name
 
     ret = bnet_packet_send(pkt, BNET_SID_CLIENTID, bnet->sbncs.fd);
 
@@ -1161,9 +1152,10 @@ bnet_send_READUSERDATA(const BnetConnectionData *bnet,
     bnet_packet_insert(pkt, &account_count, BNET_SIZE_DWORD);
     bnet_packet_insert(pkt, &key_count, BNET_SIZE_DWORD);
     bnet_packet_insert(pkt, &request_cookie, BNET_SIZE_DWORD);
-    bnet_packet_insert(pkt, username, strlen(username) + 1);
-    for (i = 0; i < key_count; i++)
-        bnet_packet_insert(pkt, keys[i], strlen(keys[i]) + 1);
+    bnet_packet_insert(pkt, username, BNET_SIZE_CSTRING);
+    for (i = 0; i < key_count; i++) {
+        bnet_packet_insert(pkt, keys[i], BNET_SIZE_CSTRING);
+    }
 
     ret = bnet_packet_send(pkt, BNET_SID_READUSERDATA, bnet->sbncs.fd);
 
@@ -1178,23 +1170,23 @@ bnet_send_WRITEUSERDATA(const BnetConnectionData *bnet,
     int ret = -1;
     int account_count = 1;
     int key_count = 4;
-    char *k_sex = "profile\\sex";
-    char *k_age = "profile\\age";
-    char *k_location = "profile\\location";
-    char *k_description = "profile\\description";
+    const char *k_sex = "profile\\sex";
+    const char *k_age = "profile\\age";
+    const char *k_location = "profile\\location";
+    const char *k_description = "profile\\description";
 
     pkt = bnet_packet_create(BNET_PACKET_BNCS);
     bnet_packet_insert(pkt, &account_count, BNET_SIZE_DWORD);
     bnet_packet_insert(pkt, &key_count, BNET_SIZE_DWORD);
-    bnet_packet_insert(pkt, bnet->username, strlen(bnet->username) + 1);
-    bnet_packet_insert(pkt, k_sex, strlen(k_sex) + 1);
-    bnet_packet_insert(pkt, k_age, strlen(k_age) + 1);
-    bnet_packet_insert(pkt, k_location, strlen(k_location) + 1);
-    bnet_packet_insert(pkt, k_description, strlen(k_description) + 1);
-    bnet_packet_insert(pkt, sex, strlen(sex) + 1);
-    bnet_packet_insert(pkt, age, strlen(age) + 1);
-    bnet_packet_insert(pkt, location, strlen(location) + 1);
-    bnet_packet_insert(pkt, description, strlen(description) + 1);
+    bnet_packet_insert(pkt, bnet->username, BNET_SIZE_CSTRING);
+    bnet_packet_insert(pkt, k_sex, BNET_SIZE_CSTRING);
+    bnet_packet_insert(pkt, k_age, BNET_SIZE_CSTRING);
+    bnet_packet_insert(pkt, k_location, BNET_SIZE_CSTRING);
+    bnet_packet_insert(pkt, k_description, BNET_SIZE_CSTRING);
+    bnet_packet_insert(pkt, sex, BNET_SIZE_CSTRING);
+    bnet_packet_insert(pkt, age, BNET_SIZE_CSTRING);
+    bnet_packet_insert(pkt, location, BNET_SIZE_CSTRING);
+    bnet_packet_insert(pkt, description, BNET_SIZE_CSTRING);
 
     ret = bnet_packet_send(pkt, BNET_SID_WRITEUSERDATA, bnet->sbncs.fd);
 
@@ -1202,7 +1194,7 @@ bnet_send_WRITEUSERDATA(const BnetConnectionData *bnet,
 }
 
 static int
-bnet_send_W3GENERAL_USERRECORD(const BnetConnectionData *bnet, guint32 cookie, gchar *username, BnetProductID product)
+bnet_send_W3GENERAL_USERRECORD(const BnetConnectionData *bnet, guint32 cookie, const gchar *username, BnetProductID product)
 {
     BnetPacket *pkt = NULL;
     int ret = -1;
@@ -1211,7 +1203,7 @@ bnet_send_W3GENERAL_USERRECORD(const BnetConnectionData *bnet, guint32 cookie, g
     pkt = bnet_packet_create(BNET_PACKET_BNCS);
     bnet_packet_insert(pkt, &subcommand, BNET_SIZE_BYTE);
     bnet_packet_insert(pkt, &cookie, BNET_SIZE_DWORD);
-    bnet_packet_insert(pkt, username, strlen(username) + 1);
+    bnet_packet_insert(pkt, username, BNET_SIZE_CSTRING);
     bnet_packet_insert(pkt, &product, BNET_SIZE_DWORD);
 
     ret = bnet_packet_send(pkt, BNET_SID_W3GENERAL, bnet->sbncs.fd);
@@ -1291,8 +1283,8 @@ bnet_send_AUTH_INFO(const BnetConnectionData *bnet)
     bnet_packet_insert(pkt, &tz_bias, BNET_SIZE_DWORD);
     bnet_packet_insert(pkt, &mpq_lang, BNET_SIZE_DWORD);
     bnet_packet_insert(pkt, &system_lang, BNET_SIZE_DWORD);
-    bnet_packet_insert(pkt, country_abbr, strlen(country_abbr) + 1);
-    bnet_packet_insert(pkt, country, strlen(country) + 1);
+    bnet_packet_insert(pkt, country_abbr, BNET_SIZE_CSTRING);
+    bnet_packet_insert(pkt, country, BNET_SIZE_CSTRING);
 
     //purple_debug_info("bnet", "send: \n%s\n", bnet_packet_get_all_data(buf));
 
@@ -1354,8 +1346,8 @@ bnet_send_AUTH_CHECK(const BnetConnectionData *bnet,
     for (; i < key_count; i++) {
         bnet_packet_insert(pkt, &keys[i], sizeof(BnetKey));
     }
-    bnet_packet_insert(pkt, exe_info, strlen(exe_info) + 1);
-    bnet_packet_insert(pkt, key_owner, strlen(key_owner) + 1); 
+    bnet_packet_insert(pkt, exe_info, BNET_SIZE_CSTRING);
+    bnet_packet_insert(pkt, key_owner, BNET_SIZE_CSTRING);
 
     g_free(keys);
 
@@ -1377,7 +1369,7 @@ bnet_send_AUTH_ACCOUNTCREATE(const BnetConnectionData *bnet, char *salt_and_v)
 
     pkt = bnet_packet_create(BNET_PACKET_BNCS);
     bnet_packet_insert(pkt, salt_and_v, 64);
-    bnet_packet_insert(pkt, username, strlen(username) + 1);
+    bnet_packet_insert(pkt, username, BNET_SIZE_CSTRING);
 
     ret = bnet_packet_send(pkt, BNET_SID_AUTH_ACCOUNTCREATE, bnet->sbncs.fd);
 
@@ -1396,7 +1388,7 @@ bnet_send_AUTH_ACCOUNTLOGON(const BnetConnectionData *bnet, char *A)
 
     pkt = bnet_packet_create(BNET_PACKET_BNCS);
     bnet_packet_insert(pkt, A, 32);
-    bnet_packet_insert(pkt, username, strlen(username) + 1);
+    bnet_packet_insert(pkt, username, BNET_SIZE_CSTRING);
 
     ret = bnet_packet_send(pkt, BNET_SID_AUTH_ACCOUNTLOGON, bnet->sbncs.fd);
 
@@ -1424,7 +1416,7 @@ bnet_send_SETEMAIL(const BnetConnectionData *bnet, const char *email)
     int ret = -1;
 
     pkt = bnet_packet_create(BNET_PACKET_BNCS);
-    bnet_packet_insert(pkt, email, strlen(email) + 1);
+    bnet_packet_insert(pkt, email, BNET_SIZE_CSTRING);
 
     ret = bnet_packet_send(pkt, BNET_SID_SETEMAIL, bnet->sbncs.fd);
 
@@ -1458,7 +1450,7 @@ bnet_send_CLANCREATIONINVITATION(const BnetConnectionData *bnet, const int cooki
     pkt = bnet_packet_create(BNET_PACKET_BNCS);
     bnet_packet_insert(pkt, &cookie, BNET_SIZE_DWORD);
     bnet_packet_insert(pkt, &clan_tag, BNET_SIZE_DWORD);
-    bnet_packet_insert(pkt, inviter_name, strlen(inviter_name) + 1);
+    bnet_packet_insert(pkt, inviter_name, BNET_SIZE_CSTRING);
     bnet_packet_insert(pkt, &response, BNET_SIZE_BYTE);
 
     ret = bnet_packet_send(pkt, BNET_SID_CLANCREATIONINVITATION, bnet->sbncs.fd);
@@ -1480,7 +1472,7 @@ bnet_send_CLANINVITATIONRESPONSE(const BnetConnectionData *bnet, const int cooki
     pkt = bnet_packet_create(BNET_PACKET_BNCS);
     bnet_packet_insert(pkt, &cookie, BNET_SIZE_DWORD);
     bnet_packet_insert(pkt, &clan_tag, BNET_SIZE_DWORD);
-    bnet_packet_insert(pkt, inviter_name, strlen(inviter_name) + 1);
+    bnet_packet_insert(pkt, inviter_name, BNET_SIZE_CSTRING);
     bnet_packet_insert(pkt, &response, BNET_SIZE_BYTE);
 
     ret = bnet_packet_send(pkt, BNET_SID_CLANINVITATIONRESPONSE, bnet->sbncs.fd);
@@ -1496,7 +1488,7 @@ bnet_send_CLANSETMOTD(const BnetConnectionData *bnet, const int cookie, const gc
 
     pkt = bnet_packet_create(BNET_PACKET_BNCS);
     bnet_packet_insert(pkt, &cookie, BNET_SIZE_DWORD);
-    bnet_packet_insert(pkt, motd, strlen(motd) + 1);
+    bnet_packet_insert(pkt, motd, BNET_SIZE_CSTRING);
 
     ret = bnet_packet_send(pkt, BNET_SID_CLANSETMOTD, bnet->sbncs.fd);
 
@@ -1540,7 +1532,7 @@ bnet_send_CLANMEMBERINFO(const BnetConnectionData *bnet, const int cookie, const
     pkt = bnet_packet_create(BNET_PACKET_BNCS);
     bnet_packet_insert(pkt, &cookie, BNET_SIZE_DWORD);
     bnet_packet_insert(pkt, &tag, BNET_SIZE_DWORD);
-    bnet_packet_insert(pkt, username, strlen(username) + 1);
+    bnet_packet_insert(pkt, username, BNET_SIZE_CSTRING);
 
     ret = bnet_packet_send(pkt, BNET_SID_CLANMEMBERINFO, bnet->sbncs.fd);
 
@@ -3483,6 +3475,8 @@ bnet_recv_W3GENERAL_USERRECORD(BnetConnectionData *bnet, BnetPacket *pkt)
 
                 if (rank != 0) {
                     s_rank = g_strdup_printf(", rank: %d", rank);
+                } else {
+                    s_rank = g_strdup("");
                 }
                 prpl_key = g_strdup_printf("%s record for %s", s_type, bnet_get_product_name(bnet->product_id));
                 prpl_val = g_strdup_printf("%d-%d (level: %d, exp: %d%s)", wins, losses, level, exp, s_rank);
@@ -3504,11 +3498,13 @@ bnet_recv_W3GENERAL_USERRECORD(BnetConnectionData *bnet, BnetPacket *pkt)
 
                 s_type = bnet_get_w3record_type_string(i);
 
-                prpl_key = g_strdup_printf("%s record for %s", s_type, bnet_get_product_name(bnet->product_id));
-                prpl_val = g_strdup_printf("%d-%d", wins, losses);
-                purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, prpl_key, prpl_val);
-                g_free(prpl_key);
-                g_free(prpl_val);
+                if (wins != 0 || losses != 0) {
+                    prpl_key = g_strdup_printf("%s record for %s", s_type, bnet_get_product_name(bnet->product_id));
+                    prpl_val = g_strdup_printf("%d-%d", wins, losses);
+                    purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, prpl_key, prpl_val);
+                    g_free(prpl_key);
+                    g_free(prpl_val);
+                }
             }
 
             // team record parsing
@@ -3555,6 +3551,8 @@ bnet_recv_W3GENERAL_USERRECORD(BnetConnectionData *bnet, BnetPacket *pkt)
                 s_last_game = bnet_format_filetime(last_game);
                 if (rank != 0) {
                     s_rank = g_strdup_printf(", rank: %d", rank);
+                } else {
+                    s_rank = g_strdup("");
                 }
                 prpl_key = g_strdup_printf("%s record for %s with %s", s_type, bnet_get_product_name(bnet->product_id), partner_list);
                 prpl_val = g_strdup_printf("%d-%d (level: %d, exp: %d%s, last played: %s)", wins, losses, level, exp, s_rank, s_last_game);
@@ -3562,9 +3560,7 @@ bnet_recv_W3GENERAL_USERRECORD(BnetConnectionData *bnet, BnetPacket *pkt)
                 g_free(prpl_key);
                 g_free(prpl_val);
                 g_free(s_last_game);
-                if (s_rank != NULL) {
-                    g_free(s_rank);
-                }
+                g_free(s_rank);
                 if (partner_list != NULL) {
                     g_free(partner_list);
                 }
@@ -3652,15 +3648,15 @@ bnet_recv_W3GENERAL_CLANRECORD(BnetConnectionData *bnet, BnetPacket *pkt)
 
                 if (rank != 0) {
                     s_rank = g_strdup_printf(", rank: %d", rank);
+                } else {
+                    s_rank = g_strdup("");
                 }
                 prpl_key = g_strdup_printf("Clan %s %s record for %s", s_clan, s_type, bnet_get_product_name(bnet->product_id));
                 prpl_val = g_strdup_printf("%d-%d (level: %d, exp: %d%s)", wins, losses, level, exp, s_rank);
                 purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, prpl_key, prpl_val);
                 g_free(prpl_key);
                 g_free(prpl_val);
-                if (s_rank != NULL) {
-                    g_free(s_rank);
-                }
+                g_free(s_rank);
             }
 
             // race record parsing
@@ -3675,11 +3671,13 @@ bnet_recv_W3GENERAL_CLANRECORD(BnetConnectionData *bnet, BnetPacket *pkt)
 
                 s_type = bnet_get_w3record_type_string(i);
 
-                prpl_key = g_strdup_printf("Clan %s %s record for %s", s_clan, s_type, bnet_get_product_name(bnet->product_id));
-                prpl_val = g_strdup_printf("%d-%d", wins, losses);
-                purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, prpl_key, prpl_val);
-                g_free(prpl_key);
-                g_free(prpl_val);
+                if (wins != 0 || losses != 0) {
+                    prpl_key = g_strdup_printf("Clan %s %s record for %s", s_clan, s_type, bnet_get_product_name(bnet->product_id));
+                    prpl_val = g_strdup_printf("%d-%d", wins, losses);
+                    purple_notify_user_info_add_pair_plaintext(bnet->lookup_info, prpl_key, prpl_val);
+                    g_free(prpl_key);
+                    g_free(prpl_val);
+                }
             }
 
             if (ladder_record_count == 0 && race_record_count == 0) {
@@ -4834,7 +4832,7 @@ bnet_parse_telnet_line(BnetConnectionData *bnet, const gchar *line)
 {
     gchar *text = bnet_locale_to_utf8(line);
 
-    purple_debug_misc("bnet", "S>C: %s\n", text);
+    purple_debug_misc("bnet", "TELNET S>C: %s\n", text);
 
     if (strlen(text) > 0) {
         gboolean regex_matched = FALSE;
@@ -4875,7 +4873,7 @@ bnet_parse_packet(BnetConnectionData *bnet, const guint8 packet_id, const gchar 
 {
     BnetPacket *pkt = NULL;
 
-    purple_debug_misc("bnet", "S>C 0x%02x: length %d\n", packet_id, packet_len);
+    purple_debug_misc("bnet", "BNCS S>C 0x%02x: length %d\n", packet_id, packet_len);
 
     pkt = bnet_packet_refer(packet_start, packet_len);
 
@@ -5425,6 +5423,10 @@ bnet_format_time(guint64 unixtime)
     time_t ut = 0;
     struct tm *t = NULL;
 
+    if (unixtime == 0) {
+        return g_strdup("never");
+    }
+
     ut = unixtime;
     t = localtime(&ut);
 
@@ -5446,7 +5448,7 @@ bnet_format_filetime_string(char *ftime_str)
     char *space_loc; // used to parse string
 
     if (strlen(ftime_str) == 0) {
-        return g_strdup("(never)");
+        return g_strdup("never");
     }
 
     data.as_ft.dwHighDateTime = (guint32)g_ascii_strtod(ftime_str, &space_loc);
@@ -5909,8 +5911,7 @@ bnet_lookup_info_close(gpointer user_data)
 static gboolean
 bnet_lookup_info_cached_channel(BnetConnectionData *bnet)
 {
-    gchar *who = bnet->lookup_info_user;
-    GList *li = g_list_find_custom(bnet->channel_users, who, bnet_channel_user_compare);
+    GList *li = g_list_find_custom(bnet->channel_users, bnet->lookup_info_user, bnet_channel_user_compare);
     BnetChannelUser *bcu;
     char *s_ping;
     char *s_caps = g_malloc0(1);
@@ -5929,7 +5930,7 @@ bnet_lookup_info_cached_channel(BnetConnectionData *bnet)
         return FALSE;
     }
 
-    purple_debug_info("bnet", "Lookup: CHANNEL_LIST(%s)\n", who);
+    purple_debug_info("bnet", "Lookup local: CHANNEL_LIST(%s)\n", bnet->lookup_info_user);
 
     bcu = li->data;
 
@@ -6300,15 +6301,14 @@ bnet_lookup_info_cached_channel(BnetConnectionData *bnet)
 //    purple_notify_userinfo(bnet->account->gc, who,
 //            bnet->lookup_info, bnet_lookup_info_close, bnet);
 
-    purple_debug_info("bnet", "Lookup complete: CHANNEL_LIST(%s)\n", who);
-
     return TRUE;
 }
 
 static gboolean
 bnet_lookup_info_cached_friends(BnetConnectionData *bnet)
 {
-    GList *li = g_list_find_custom(bnet->friends_list, bnet->lookup_info_user, bnet_friend_user_compare);
+    const char *acct_norm = bnet_account_normalize(bnet->account, bnet->lookup_info_user);
+    GList *li = g_list_find_custom(bnet->friends_list, acct_norm, bnet_friend_user_compare);
     BnetFriendInfo *bfi;
 
     if (li == NULL) {
@@ -6316,7 +6316,7 @@ bnet_lookup_info_cached_friends(BnetConnectionData *bnet)
         return FALSE;
     }
 
-    purple_debug_info("bnet", "Lookup: FRIENDS_LIST(%s)\n", bnet->lookup_info_user);
+    purple_debug_info("bnet", "Lookup local found: FRIENDS_LIST(%s)\n", acct_norm);
 
     bfi = li->data;
 
@@ -6350,14 +6350,13 @@ bnet_lookup_info_cached_friends(BnetConnectionData *bnet)
 //    purple_notify_userinfo(bnet->account->gc, bnet->lookup_info_user,
 //            bnet->lookup_info, bnet_lookup_info_close, bnet);
 
-    purple_debug_info("bnet", "Lookup complete: FRIENDS_LIST(%s)\n", bnet->lookup_info_user);
-
     return TRUE;
 }
 
 static gboolean
 bnet_lookup_info_cached_clan(BnetConnectionData *bnet)
 {
+    const char *acct_norm = bnet_account_normalize(bnet->account, bnet->lookup_info_user);
     const BnetClanMember *bcmi = NULL;
     BnetClanTag clan_tag;
     gchar *s_clan = NULL;
@@ -6366,7 +6365,7 @@ bnet_lookup_info_cached_clan(BnetConnectionData *bnet)
         return FALSE;
     }
 
-    bcmi = bnet_clan_info_get_member(bnet->clan_info, bnet->lookup_info_user);
+    bcmi = bnet_clan_info_get_member(bnet->clan_info, acct_norm);
     clan_tag = bnet_clan_info_get_tag(bnet->clan_info);
     s_clan = bnet_clan_tag_to_string(clan_tag);
 
@@ -6377,7 +6376,7 @@ bnet_lookup_info_cached_clan(BnetConnectionData *bnet)
     bnet->lookup_info_found_clan = TRUE;
     bnet->lookup_info_clan = clan_tag;
 
-    purple_debug_info("bnet", "Lookup: W3_CLAN_LIST(%s, Clan %s)\n", bnet->lookup_info_user, s_clan);
+    purple_debug_info("bnet", "Lookup local found: W3_CLAN_LIST(%s, Clan %s)\n", acct_norm, s_clan);
 
 //    if (!bnet->lookup_info) {
 //        bnet->lookup_info = purple_notify_user_info_new();
@@ -6389,8 +6388,6 @@ bnet_lookup_info_cached_clan(BnetConnectionData *bnet)
 //    purple_notify_userinfo(bnet->account->gc, bnet->lookup_info_user,
 //            bnet->lookup_info, bnet_lookup_info_close, bnet);
 
-    purple_debug_info("bnet", "Lookup complete: W3_CLAN_LIST(%s, Clan %s)\n", bnet->lookup_info_user, s_clan);
-
     g_free(s_clan);
 
     return TRUE;
@@ -6399,31 +6396,27 @@ bnet_lookup_info_cached_clan(BnetConnectionData *bnet)
 static void
 bnet_lookup_info_whois(BnetConnectionData *bnet)
 {
-    gchar *who = bnet->lookup_info_user;
-
     bnet->lookup_info_await |= BNET_LOOKUP_INFO_AWAIT_WHOIS;
-    purple_debug_info("bnet", "Lookup: WHOIS(%s)\n", who);
+    purple_debug_info("bnet", "Lookup: WHOIS(%s)\n", bnet->lookup_info_user);
 
-    bnet_do_whois(bnet, who);
+    bnet_do_whois(bnet, bnet->lookup_info_user);
 }
 
 static void
 bnet_lookup_info_user_data(BnetConnectionData *bnet)
 {
-    gchar *who = bnet->lookup_info_user;
     gchar *final_request;
     BnetUserDataRequest *req;
     BnetUserDataRequestType request_type;
     gboolean is_self = FALSE;
     int recordbits = 0;
     char **keys;
-    const char *norm = bnet_normalize(bnet->account, who);
-    int request_cookie = g_str_hash(norm);
-    const char *acct_norm = bnet_account_normalize(bnet->account, norm);
+    int request_cookie = g_str_hash(bnet->lookup_info_user);
+    const char *acct_norm = bnet_account_normalize(bnet->account, bnet->lookup_info_user);
     const char *uu_norm = bnet_normalize(bnet->account, bnet->unique_username);
 
     bnet->lookup_info_await |= BNET_LOOKUP_INFO_AWAIT_USER_DATA;
-    purple_debug_info("bnet", "Lookup: USER_DATA(%s)\n", who);
+    purple_debug_info("bnet", "Lookup: USER_DATA(%s)\n", acct_norm);
 
     if (strcmp(uu_norm, acct_norm) == 0) {
         final_request = g_strdup_printf("%s\n%s", BNET_USERDATA_PROFILE_REQUEST, BNET_USERDATA_SYSTEM_REQUEST);
@@ -6507,29 +6500,29 @@ bnet_lookup_info_user_data(BnetConnectionData *bnet)
 static void
 bnet_lookup_info_w3_user_profile(BnetConnectionData *bnet)
 {
-    gchar *username = bnet->lookup_info_user;
+    const char *acct_norm = bnet_account_normalize(bnet->account, bnet->lookup_info_user);
     guint32 cookie;
 
     bnet->lookup_info_await |= BNET_LOOKUP_INFO_AWAIT_W3_USER_PROFILE;
-    purple_debug_info("bnet", "Lookup: W3_USER_PROFILE(%s)\n", username);
+    purple_debug_info("bnet", "Lookup: W3_USER_PROFILE(%s)\n", acct_norm);
     
-    cookie = bnet_clan_packet_register(bnet->clan_info, BNET_SID_W3PROFILE, g_strdup(username));
+    cookie = bnet_clan_packet_register(bnet->clan_info, BNET_SID_W3PROFILE, g_strdup(acct_norm));
 
-    bnet_send_W3PROFILE(bnet, cookie, username);
+    bnet_send_W3PROFILE(bnet, cookie, acct_norm);
 }
 
 static void
 bnet_lookup_info_w3_user_stats(BnetConnectionData *bnet)
 {
-    gchar *username = bnet->lookup_info_user;
+    const char *acct_norm = bnet_account_normalize(bnet->account, bnet->lookup_info_user);
     guint32 cookie;
 
     bnet->lookup_info_await |= BNET_LOOKUP_INFO_AWAIT_W3_USER_STATS;
-    purple_debug_info("bnet", "Lookup: W3_USER_STATS(%s)\n", bnet->lookup_info_user);
+    purple_debug_info("bnet", "Lookup: W3_USER_STATS(%s)\n", acct_norm);
 
-    cookie = bnet_clan_packet_register(bnet->clan_info, BNET_SID_W3GENERAL, g_strdup(username));
+    cookie = bnet_clan_packet_register(bnet->clan_info, BNET_SID_W3GENERAL, g_strdup(acct_norm));
 
-    bnet_send_W3GENERAL_USERRECORD(bnet, cookie, username, bnet->product_id);
+    bnet_send_W3GENERAL_USERRECORD(bnet, cookie, acct_norm, bnet->product_id);
 }
 
 static void
@@ -6550,15 +6543,15 @@ static void
 bnet_lookup_info_w3_clan_mi(BnetConnectionData *bnet)
 {
     gchar *s_clan = bnet_clan_tag_to_string(bnet->lookup_info_clan);
-    gchar *username = bnet->lookup_info_user;
+    const char *acct_norm = bnet_account_normalize(bnet->account, bnet->lookup_info_user);
     guint32 cookie;
 
     bnet->lookup_info_await |= BNET_LOOKUP_INFO_AWAIT_W3_CLAN_MI;
-    purple_debug_info("bnet", "Lookup: W3_CLAN_MI(%s, Clan %s)\n", bnet->lookup_info_user, s_clan);
+    purple_debug_info("bnet", "Lookup: W3_CLAN_MI(%s, Clan %s)\n", acct_norm, s_clan);
 
     cookie = bnet_clan_packet_register(bnet->clan_info, BNET_SID_CLANMEMBERINFO, s_clan);
 
-    bnet_send_CLANMEMBERINFO(bnet, cookie, bnet->lookup_info_clan, username);
+    bnet_send_CLANMEMBERINFO(bnet, cookie, bnet->lookup_info_clan, acct_norm);
 }
 
 static void

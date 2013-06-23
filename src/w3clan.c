@@ -289,7 +289,7 @@ bnet_clan_info_set_members(BnetClanInfo *info, GList *members, gboolean free_old
 }
 
 BnetClanMember *
-bnet_clan_info_get_member(const BnetClanInfo *info, gchar *name)
+bnet_clan_info_get_member(const BnetClanInfo *info, const gchar *name)
 {
     struct _BnetClanInfo *bcli = (struct _BnetClanInfo *)info;
     GList *el = NULL;

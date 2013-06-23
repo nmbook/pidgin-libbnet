@@ -37,9 +37,15 @@ bnet_packet_free(BnetPacket *bnet_packet)
 gboolean
 bnet_packet_insert(BnetPacket *bnet_packet, gconstpointer data, const gsize length)
 {
+    gsize _length = length;
+
     if (bnet_packet->allocd == FALSE) return FALSE;
+
+    if (_length == BNET_SIZE_CSTRING) {
+        _length = strlen(data) + 1;
+    }
     
-    while (bnet_packet->pos + length > bnet_packet->len) {
+    while (bnet_packet->pos + _length > bnet_packet->len) {
         bnet_packet->len += BNET_BUFFER_GROW_SIZE;
         if (bnet_packet->data == NULL) return FALSE;
         bnet_packet->data = g_realloc(bnet_packet->data, bnet_packet->len);
@@ -47,8 +53,8 @@ bnet_packet_insert(BnetPacket *bnet_packet, gconstpointer data, const gsize leng
     
     if (bnet_packet->data == NULL) return FALSE;
     
-    g_memmove(bnet_packet->data + bnet_packet->pos, data, length);
-    bnet_packet->pos += length;
+    g_memmove(bnet_packet->data + bnet_packet->pos, data, _length);
+    bnet_packet->pos += _length;
     
     return TRUE;
 }
@@ -197,7 +203,7 @@ bnet_packet_send(BnetPacket *bnet_packet, const guint8 id, const int fd)
     
     ret = write(fd, bnet_packet->data, bnet_packet->pos);
     
-    purple_debug_misc("bnet", "C>S 0x%02x: length %d\n", id, bnet_packet->pos);
+    purple_debug_misc("bnet", "BNCS C>S 0x%02x: length %d\n", id, bnet_packet->pos);
     
     bnet_packet_free(bnet_packet);
     

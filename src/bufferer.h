@@ -39,6 +39,7 @@
 #define BNET_SIZE_DWORD 4
 #define BNET_SIZE_WORD 2
 #define BNET_SIZE_BYTE 1
+#define BNET_SIZE_CSTRING -1
 
 // packet buffer grow size
 #define BNET_BUFFER_GROW_SIZE 256
