@@ -48,8 +48,9 @@
 #define BNET_IDENT_FLAG 0xFF
 
 // header sizes
-#define BNET_PACKET_BNCS 4
-#define BNET_PACKET_BNLS 3
+#define BNET_PACKET_BNCS  4
+#define BNET_PACKET_BNLS  3
+#define BNET_PACKET_D2MCP 3
 
 typedef struct {
     gchar *data;
@@ -59,18 +60,27 @@ typedef struct {
 } BnetPacket;
 
 void bnet_packet_free(BnetPacket *bnet_packet);
+
 gboolean bnet_packet_insert(BnetPacket *bnet_packet, gconstpointer data, const gsize length);
+
 BnetPacket *bnet_packet_refer(const gchar *start, const gsize length);
 BnetPacket *bnet_packet_refer_bnls(const gchar *start, const gsize length);
+#define bnet_packet_refer_d2mcp bnet_packet_refer_bnls
+
+gboolean bnet_packet_can_read(BnetPacket *bnet_packet, const gsize size);
 void *bnet_packet_read(BnetPacket *bnet_packet, const gsize size);
 char *bnet_packet_read_cstring(BnetPacket *bnet_packet);
 guint64 bnet_packet_read_qword(BnetPacket *bnet_packet);
 guint32 bnet_packet_read_dword(BnetPacket *bnet_packet);
 guint16 bnet_packet_read_word(BnetPacket *bnet_packet);
 guint8 bnet_packet_read_byte(BnetPacket *bnet_packet);
+
 BnetPacket *bnet_packet_create(const gsize header_length);
+
 int bnet_packet_send(BnetPacket *bnet_packet, const guint8 id, const int fd);
 int bnet_packet_send_bnls(BnetPacket *bnet_packet, const guint8 id, const int fd);
+#define bnet_packet_send_d2mcp bnet_packet_send_bnls
+
 char *bnet_packet_debug(const BnetPacket *bnet_packet);
 void clear_line(char *line, int size);
 char * ascii_char(char *position, int c);

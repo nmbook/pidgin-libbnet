@@ -83,6 +83,13 @@ bnet_packet_refer_bnls(const gchar *start, const gsize length)
     return bnet_packet;
 }
 
+gboolean
+bnet_packet_can_read(BnetPacket *bnet_packet, const gsize size)
+{
+    if (bnet_packet->allocd == TRUE) return FALSE;
+    return (bnet_packet->len >= bnet_packet->pos + size);
+}
+
 void *
 bnet_packet_read(BnetPacket *bnet_packet, const gsize size)
 {

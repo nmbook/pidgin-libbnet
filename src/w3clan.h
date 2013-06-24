@@ -74,8 +74,6 @@ void bnet_clan_info_leave_clan(BnetClanInfo *info);
 void bnet_clan_info_free(BnetClanInfo *info, gboolean free_members);
 BnetClanTag bnet_clan_info_get_tag(const BnetClanInfo *info);
 BnetClanMemberRank bnet_clan_info_get_my_rank(const BnetClanInfo *info);
-gchar *bnet_clan_info_get_motd(const BnetClanInfo *info);
-void bnet_clan_info_set_motd(BnetClanInfo *info, gchar *motd);
 gchar *bnet_clan_info_get_name(const BnetClanInfo *info);
 void bnet_clan_info_set_name(BnetClanInfo *info, gchar *name);
 void bnet_clan_info_set_members(BnetClanInfo *info, GList *members, gboolean free_old_list);

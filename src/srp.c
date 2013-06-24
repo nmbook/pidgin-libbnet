@@ -294,6 +294,7 @@ void srp_get_S(srp_t *srp, gchar *out, const gchar *B, const gchar *salt)
     mpz_t S_base, S_exp;
     mpz_t x;
     mpz_t v;
+    size_t count;
     
     if (!srp)
         return;
@@ -326,7 +327,7 @@ void srp_get_S(srp_t *srp, gchar *out, const gchar *B, const gchar *salt)
     mpz_powm(temp, S_base, S_exp, srp->n);
     mpz_clear(S_base);
     mpz_clear(S_exp);
-    mpz_export(out, (size_t *) 0, -1, 1, 0, 0, temp);
+    mpz_export(out, &count, -1, 1, 0, 0, temp);
     mpz_clear(temp);
 
     srp->S = (gchar *) g_malloc(32);
@@ -339,18 +340,19 @@ guint32 srp_generate_salt_and_v(srp_t *srp, gchar *out)
     mpz_t s; /* salt */
     mpz_t v;
     mpz_t x;
+    size_t count;
 
     if (!srp)
         return 0;
     
     mpz_init2(s, 256);
     mpz_urandomb(s, srp->rand, 256);
-    mpz_export(out, (size_t *) 0, -1, 1, 0, 0, s);
+    mpz_export(out, &count, -1, 1, 0, 0, s);
     /*memset(buf, 0, 32);*/
     
     srp_get_x(srp, x, out);
     srp_get_v_mpz(srp, v, x);
-    mpz_export(out + 32, (size_t *) 0, -1, 1, 0, 0, v);
+    mpz_export(out + 32, &count, -1, 1, 0, 0, v);
     
     mpz_clear(x);
     mpz_clear(v);
@@ -364,6 +366,7 @@ void srp_get_v(srp_t *srp, gchar *out, const gchar *salt)
     mpz_t g;
     mpz_t v;
     mpz_t x;
+    size_t count;
     
     if (!srp)
         return;
@@ -374,7 +377,7 @@ void srp_get_v(srp_t *srp, gchar *out, const gchar *salt)
     
     mpz_powm(v, g, x, srp->n);
     
-    mpz_export(out, (size_t *) 0, -1, 1, 0, 0, v);
+    mpz_export(out, &count, -1, 1, 0, 0, v);
     mpz_clear(v);
     mpz_clear(g);
     mpz_clear(x);

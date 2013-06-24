@@ -50,8 +50,6 @@ struct _BnetClanInfo {
     BnetClanTag tag;
     // clan name -- NULL if in_clan = FALSE
     gchar *name;
-    // clan MOTD -- NULL if in_clan = FALSE
-    gchar *motd;
     // my rank -- -1 if in_clan = FALSE
     BnetClanMemberRank my_rank;
     // GList<BnetClanMember> -- NULL if not received
@@ -222,10 +220,6 @@ bnet_clan_info_leave_clan(BnetClanInfo *info)
     if (info != NULL) {
         struct _BnetClanInfo *bcli = (struct _BnetClanInfo *)info;
         bcli->in_clan = FALSE;
-        if (bcli->motd != NULL) {
-            g_free(bcli->motd);
-        }
-        bcli->motd = NULL;
         if (bcli->members != NULL) {
             _g_list_free_full(bcli->members, (GDestroyNotify)bnet_clan_member_free);
         }
@@ -239,9 +233,6 @@ bnet_clan_info_free(BnetClanInfo *info, gboolean free_members)
     if (info != NULL) {
         struct _BnetClanInfo *bcli = (struct _BnetClanInfo *)info;
         g_hash_table_destroy(bcli->cookie_list);
-        if (bcli->motd != NULL) {
-            g_free(bcli->motd);
-        }
         if (free_members && bcli->members != NULL) {
             _g_list_free_full(bcli->members, (GDestroyNotify)bnet_clan_member_free);
         }
@@ -259,21 +250,6 @@ BnetClanMemberRank
 bnet_clan_info_get_my_rank(const BnetClanInfo *info)
 {
     return ((struct _BnetClanInfo *)info)->my_rank;
-}
-
-gchar *
-bnet_clan_info_get_motd(const BnetClanInfo *info)
-{
-    return ((struct _BnetClanInfo *)info)->motd;
-}
-
-void
-bnet_clan_info_set_motd(BnetClanInfo *info, gchar *motd)
-{
-    if (((struct _BnetClanInfo *)info)->motd != NULL) {
-        g_free(((struct _BnetClanInfo *)info)->motd);
-    }
-    ((struct _BnetClanInfo *)info)->motd = motd;
 }
 
 gchar *

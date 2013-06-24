@@ -145,6 +145,8 @@ typedef enum {
     BNET_SID_CDKEY2                  = 0x36,
     BNET_SID_LOGONRESPONSE2          = 0x3A,
     BNET_SID_CREATEACCOUNT2          = 0x3D,
+    BNET_SID_LOGONREALMEX            = 0x3E,
+    BNET_SID_QUERYREALMS2            = 0x40,
     BNET_SID_W3GENERAL               = 0x44,
     BNET_SID_NETGAMEPORT             = 0x45,
     BNET_SID_NEWS_INFO               = 0x46,
@@ -328,6 +330,7 @@ typedef enum {
     BNET_BNLS_LOGONCHALLENGE     = 0x02,
     BNET_BNLS_LOGONPROOF         = 0x03,
     BNET_BNLS_CHOOSENLSREVISION  = 0x0D,
+    BNET_BNLS_MESSAGE            = 0xFF
 } BnetBnlsPacketID;
 
 // flags for SID_JOINCHANNEL
@@ -466,6 +469,85 @@ typedef struct {
 */
 
 typedef enum {
+    BNET_REALM_SUCCESS           = 0x00,
+    
+    BNET_REALM_LOGON_UNAVAIL     = 0x80000001,
+    BNET_REALM_LOGON_BADPW       = 0x80000002,
+    
+    // game available
+    BNET_REALM_GLIST_AVAIL       = 0x04,
+    // game server down
+    BNET_REALM_GLIST_UNAVAIL     = 0xFFFFFFFF,
+    
+    // create failed: already exists
+    BNET_REALM_CHAR_EXISTS       = 0x14,
+    // create failed: bad character name
+    BNET_REALM_CHAR_BADNAME      = 0x15,
+    // logon failed: player does not exist
+    BNET_REALM_CHAR_PDNE         = 0x46,
+    // delete failed: char does not exist
+    BNET_REALM_CHARDEL_DNE       = 0x49,
+    // logon failed/upgrade failed
+    BNET_REALM_CHAR_FAILED       = 0x7A,
+    // logon failed/upgrade failed: char expired
+    BNET_REALM_CHAR_EXPIRED      = 0x7B,
+    // upgrade failed: already expansion
+    BNET_REALM_CHARUP_ALREADY    = 0x7C,
+    
+    // create failed: bad name
+    BNET_REALM_GAME_BADNAME      = 0x1E,
+    // create failed: exists
+    BNET_REALM_GAME_EXISTS       = 0x1F,
+    // game server down
+    BNET_REALM_GAME_UNAVAIL      = 0x20,
+    // join failed: bad pw
+    BNET_REALM_GAME_BADPW        = 0x29,
+    // join failed: does not exist
+    BNET_REALM_GAME_DNE          = 0x2A,
+    // join failed: game full
+    BNET_REALM_GAME_FULL         = 0x2B,
+    // join failed: failed level reqs
+    BNET_REALM_GAME_LEVEL        = 0x2C,
+    // join failed: your hc char is dead
+    BNET_REALM_GAME_DEADHC       = 0x6E,
+    // join failed: a non-hardcare char cannot join a hardcore game
+    BNET_REALM_GAME_NOTHC        = 0x71,
+    // join failed: nightmare not available
+    BNET_REALM_GAME_NOTNM        = 0x73,
+    // join failed: hell not available
+    BNET_REALM_GAME_NOTHELL      = 0x74,
+    // join failed: a non-exp char cannot join a exp game
+    BNET_REALM_GAME_NOTXP        = 0x78,
+    // join failed: a exp char cannot join a non-exp game
+    BNET_REALM_GAME_NOTDV        = 0x79,
+    // join failed: a non-ladder char cannot join a ladder game
+    BNET_REALM_GAME_NOTL         = 0x7D,
+    
+    // no bncs connection detected (2)
+    BNET_REALM_CONNECT_NOBNCS2   = 0x02,
+    // no bncs connection detected (10)
+    BNET_REALM_CONNECT_NOBNCS10  = 0x0A,
+    // no bncs connection detected (11)
+    BNET_REALM_CONNECT_NOBNCS11  = 0x0B,
+    // no bncs connection detected (12)
+    BNET_REALM_CONNECT_NOBNCS12  = 0x0C,
+    // no bncs connection detected (13)
+    BNET_REALM_CONNECT_NOBNCS13  = 0x0D,
+    // key is banned
+    BNET_REALM_CONNECT_KEYBAN    = 0x7E,
+    // temporarily banned
+    BNET_REALM_CONNECT_TEMPBAN   = 0x7F,
+} BnetRealmStatus;
+
+// bnls packet ids
+typedef enum {
+    BNET_D2MCP_STARTUP = 0x01,
+    BNET_D2MCP_CHARLOGON = 0x07,
+    BNET_D2MCP_MOTD = 0x12,
+    BNET_D2MCP_CHARLIST2 = 0x19,
+} BnetD2RealmPacketID;
+
+typedef enum {
     BNET_WID_USERRECORD = 0x04,
     BNET_WID_CLANRECORD = 0x08,
 } BnetW3GeneralSubcommand;
@@ -518,6 +600,31 @@ typedef enum {
     BNET_LOOKUP_INFO_AWAIT_W3_CLAN_MI          = 0x8000,
 } BnetLookupInfoAwait;
 
+typedef struct {
+    guint32 timestamp;
+    gchar *message;
+} BnetNewsItem;
+
+typedef struct {
+    gchar *name;
+    gchar *subname;
+    gchar *message;
+} BnetMotdItem;
+
+// these are used in the "Get News Info" dialog to classify BnetNewsItems.
+// motd sent by the BNCS in response to SID_NEWS_INFO, with timestamp 0 (name = gateway)
+#define BNET_MOTD_TYPE_BNCS     0
+// any messages sent in BNLS_MESSAGE (aka BNLS_IPBAN) (name = address)
+#define BNET_MOTD_TYPE_BNLS     1
+// motd set by D2MCP_GETMOTD (name = realm name)
+#define BNET_MOTD_TYPE_D2MCP    2
+// motd set by SID_CLANMOTD (name = "Clan tag: name")
+#define BNET_MOTD_TYPE_CLAN     3
+// information of upcoming tournament, sent by SID_TOURNAMENT (not implemented) (name = tournament name)
+#define BNET_MOTD_TYPE_WCG_T    4
+// information of upcoming tournament, sent by SID_W3GENERAL.WID_TOURNAMENT (name = tournament name)
+#define BNET_MOTD_TYPE_W3_T     5
+#define BNET_MOTD_TYPES         6
 
 // stores socket connection data for a specific socket
 struct SocketData {
@@ -548,6 +655,8 @@ typedef struct {
     struct SocketData sbncs;
     // BNLS
     struct SocketData sbnls;
+    // D2 realm
+    struct SocketData sd2mcp;
     
     // current connection info:
     // current username
@@ -561,6 +670,20 @@ typedef struct {
     // current BNLS port
     guint16 bnls_port;
     
+    // current D2 realm address/port
+    gchar *mcp_addr;
+    guint16 mcp_port;
+    // data used to start D2 realm connection
+    guint32 mcp_data[16];
+    // realm name
+    gchar *mcp_name;
+    // realm descr
+    gchar *mcp_descr;
+    // currently logged in as this character
+    guint32 mcp_char_exp;
+    gchar *mcp_char;
+    gchar *mcp_char_stats;
+    
     // authentication data:
     gboolean emulate_telnet;
     // the game product to emulate (BNLS style)
@@ -573,8 +696,8 @@ typedef struct {
     guint32 client_cookie;
     // the server cookie (server token)
     guint32 server_cookie;
-    // the UDP cookie (UDP token)
-    guint32 udp_cookie;
+    // the session cookie (sometimes known as UDP value)
+    guint32 session_cookie;
     // versioning system
     BnetVersioningSystem versioning_system;
     // logon type
@@ -622,6 +745,8 @@ typedef struct {
     guint32 news_count;
     // news messages
     GList *news;
+    // message of the days for various things
+    BnetMotdItem motds[BNET_MOTD_TYPES];
     // email fields for dialog
     PurpleRequestFields *set_email_fields;
     
@@ -718,10 +843,6 @@ typedef struct {
     gchar *clan_name;
 } BnetClanInvitationCallbackData;
 
-typedef struct {
-    guint32 timestamp;
-    gchar *message;
-} BnetNewsItem;
 
 typedef enum {
     BNET_CMD_NONE = 0,
@@ -869,7 +990,7 @@ static void bnet_login(PurpleAccount *account);
 static void bnet_bnls_login_cb(gpointer data, gint source, const gchar *error_message);
 static int  bnet_bnls_send_LOGONCHALLENGE(const BnetConnectionData *bnet);
 static int  bnet_bnls_send_VERSIONCHECKEX2(const BnetConnectionData *bnet,
-            guint32 login_type, guint32 server_cookie, guint32 udp_cookie,
+            guint32 login_type, guint32 server_cookie, guint32 session_cookie,
             guint64 mpq_ft, char *mpq_fn, char *checksum_formula);
 static int  bnet_bnls_send_REQUESTVERSIONBYTE(BnetConnectionData *bnet);
 static void bnet_bnls_input_cb(gpointer data, gint source, PurpleInputCondition cond);
@@ -881,11 +1002,18 @@ static void bnet_bnls_recv_REQUESTVERSIONBYTE(BnetConnectionData *bnet, BnetPack
 static void bnet_bnls_recv_VERSIONCHECKEX2(BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_bnls_parse_packet(BnetConnectionData *bnet, const guint8 packet_id,
             const gchar *packet_start, const guint16 packet_len);
+static void bnet_realm_login_cb(gpointer data, gint source, const gchar *error_message);
+static gboolean bnet_realm_protocol_begin(const BnetConnectionData *bnet);
+static int  bnet_realm_send_STARTUP(const BnetConnectionData *bnet);
+static void bnet_realm_input_cb(gpointer data, gint source, PurpleInputCondition cond);
+static void bnet_realm_read_input(BnetConnectionData *bnet, int len);
+static void bnet_realm_parse_packet(BnetConnectionData *bnet, const guint8 packet_id,
+            const gchar *packet_start, const guint16 packet_len);
 static void bnet_login_cb(gpointer data, gint source, const gchar *error_message);
 static gboolean bnet_protocol_telnet_begin(const BnetConnectionData *bnet);
 static gboolean bnet_protocol_begin(const BnetConnectionData *bnet);
 static int  bnet_send_telnet_line(const BnetConnectionData *bnet, const char *line);
-static int  bnet_send_protocol_byte(const BnetConnectionData *bnet, int byte);
+static int  bnet_send_protocol_byte(int byte, int fd);
 static int  bnet_send_NULL(const BnetConnectionData *bnet);
 static int  bnet_send_STARTVERSIONING(const BnetConnectionData *bnet);
 static int  bnet_send_REPORTVERSION(const BnetConnectionData *bnet,
@@ -1024,6 +1152,8 @@ static void bnet_account_chpw(PurpleConnection *gc, const char *oldpass, const c
 static void bnet_account_logon(BnetConnectionData *bnet);
 static void bnet_enter_channel(const BnetConnectionData *bnet);
 static void bnet_enter_chat(BnetConnectionData *bnet);
+static int  bnet_realm_logon(const BnetConnectionData *bnet, const guint32 client_cookie,
+            const gchar *realm_name, const gchar *realm_pass);
 static void bnet_entered_chat(BnetConnectionData *bnet);
 static gboolean bnet_keepalive_timer(BnetConnectionData *bnet);
 static void bnet_account_lockout_set(BnetConnectionData *bnet);
