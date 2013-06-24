@@ -37,7 +37,7 @@ _g_list_free_full(GList *list, GDestroyNotify free_fn)
 }
 
 static void
-bnet_free_motd(BnetConnectionData *bnet, int type)
+bnet_motd_free(BnetConnectionData *bnet, int type)
 {
     if (bnet->motds[type].name != NULL) {
         purple_debug_info("bnet", "free motd[%d].name\n", type);
@@ -566,7 +566,7 @@ bnet_bnls_recv_MESSAGE(BnetConnectionData *bnet, BnetPacket *pkt)
 {
     gchar *message = bnet_packet_read_cstring(pkt);
     
-    bnet_free_motd(bnet, BNET_MOTD_TYPE_BNLS);
+    bnet_motd_free(bnet, BNET_MOTD_TYPE_BNLS);
     bnet->motds[BNET_MOTD_TYPE_BNLS].name = NULL;
     bnet->motds[BNET_MOTD_TYPE_BNLS].subname = NULL;
     bnet->motds[BNET_MOTD_TYPE_BNLS].message = message;
@@ -862,7 +862,7 @@ bnet_realm_recv_MOTD(BnetConnectionData *bnet, BnetPacket *pkt)
     bnet_packet_read_byte(pkt);
     message = bnet_packet_read_cstring(pkt);
     
-    bnet_free_motd(bnet, BNET_MOTD_TYPE_D2MCP);
+    bnet_motd_free(bnet, BNET_MOTD_TYPE_D2MCP);
     bnet->motds[BNET_MOTD_TYPE_D2MCP].name = g_strdup(bnet->mcp_name);
     bnet->motds[BNET_MOTD_TYPE_D2MCP].subname = g_strdup(bnet->mcp_descr);
     bnet->motds[BNET_MOTD_TYPE_D2MCP].message = message;
@@ -1626,14 +1626,13 @@ bnet_send_W3GENERAL_CLANRECORD(const BnetConnectionData *bnet, guint32 cookie, B
 }
 
 static int
-bnet_send_NEWS_INFO(const BnetConnectionData *bnet)
+bnet_send_NEWS_INFO(const BnetConnectionData *bnet, guint32 news_latest)
 {
     BnetPacket *pkt = NULL;
     int ret = -1;
-    int zero = 0;
 
     pkt = bnet_packet_create(BNET_PACKET_BNCS);
-    bnet_packet_insert(pkt, &zero, BNET_SIZE_DWORD);
+    bnet_packet_insert(pkt, &news_latest, BNET_SIZE_DWORD);
 
     ret = bnet_packet_send(pkt, BNET_SID_NEWS_INFO, bnet->sbncs.fd);
 
@@ -1994,9 +1993,8 @@ bnet_enter_chat(BnetConnectionData *bnet)
         bnet_send_GETCHANNELLIST(bnet);
         bnet->sent_enter_channel = TRUE;
         bnet_enter_channel(bnet);
-        // reset news count
-        bnet->news_count = 0;
-        bnet_send_NEWS_INFO(bnet);
+        bnet_news_load(bnet);
+        bnet_send_NEWS_INFO(bnet, bnet->news_latest);
     }
     bnet_send_FRIENDSLIST(bnet);
 }
@@ -2380,8 +2378,8 @@ bnet_recv_ENTERCHAT(BnetConnectionData *bnet, BnetPacket *pkt)
 
     if (bnet_is_d2(bnet) || bnet_is_w3(bnet)) {
         // reset news count
-        bnet->news_count = 0;
-        bnet_send_NEWS_INFO(bnet);
+        bnet_news_load(bnet);
+        bnet_send_NEWS_INFO(bnet, bnet->news_latest);
     }
 }
 
@@ -4305,24 +4303,38 @@ bnet_recv_NEWS_INFO(BnetConnectionData *bnet, BnetPacket *pkt)
         gchar *message = bnet_packet_read_cstring(pkt);
 
         if (timestamp == 0) {
-            bnet_free_motd(bnet, BNET_MOTD_TYPE_BNCS);
+            bnet_motd_free(bnet, BNET_MOTD_TYPE_BNCS);
             bnet->motds[BNET_MOTD_TYPE_BNCS].name = NULL;
             bnet->motds[BNET_MOTD_TYPE_BNCS].subname = NULL;
             bnet->motds[BNET_MOTD_TYPE_BNCS].message = message;
             
             if (!bnet->sent_enter_channel) {
+                bnet->news = g_list_sort(bnet->news, bnet_news_item_sort);
+                bnet_news_save(bnet);
                 bnet->sent_enter_channel = TRUE;
                 bnet_enter_channel(bnet);
             }
 
             purple_debug_info("bnet", "News items: %d\n", bnet->news_count);
         } else {
+            GList *el2 = g_list_first(bnet->news);
             BnetNewsItem *item = g_new0(BnetNewsItem, 1);
+                
+            while (el2 != NULL) {
+                if (((BnetNewsItem *)el2->data)->timestamp == timestamp) {
+                    purple_debug_warning("bnet", "duplicate in bnet_recv_NEWS_INFO\n");
+                }
+                el2 = g_list_next(el2);
+            }
+            
             item->timestamp = timestamp;
             item->message = message;
 
             bnet->news = g_list_append(bnet->news, item);
             bnet->news_count++;
+            if (item->timestamp > bnet->news_latest) {
+                bnet->news_latest = item->timestamp;
+            }
         }
     }
 }
@@ -5084,7 +5096,7 @@ bnet_recv_CLANMOTD(BnetConnectionData *bnet, BnetPacket *pkt)
     bnet_clan_packet_unregister(bnet->clan_info, BNET_SID_CLANMOTD, cookie);
     s_tag = bnet_clan_tag_to_string(bnet_clan_info_get_tag(bnet->clan_info));
     s_name = bnet_clan_info_get_name(bnet->clan_info);
-    bnet_free_motd(bnet, BNET_MOTD_TYPE_CLAN);
+    bnet_motd_free(bnet, BNET_MOTD_TYPE_CLAN);
     bnet->motds[BNET_MOTD_TYPE_CLAN].name = g_strdup_printf("Clan %s", s_tag);
     if (s_name != NULL) {
         bnet->motds[BNET_MOTD_TYPE_CLAN].subname = g_strdup(s_name);
@@ -6309,7 +6321,7 @@ bnet_close(PurpleConnection *gc)
             bnet->news = NULL;
         }
         for (i = 0; i < BNET_MOTD_TYPES; i++) {
-            bnet_free_motd(bnet, i);
+            bnet_motd_free(bnet, i);
         }
         if (bnet->away_msg != NULL) {
             purple_debug_info("bnet", "free away_msg\n");
@@ -7262,6 +7274,190 @@ bnet_locale_full_escape_nullable(const gchar *input)
 }
 
 static void
+bnet_cache_set(BnetConnectionData *bnet, gchar *name, guint64 timestamp, gchar *key, gchar *val)
+{
+    xmlnode *current_cache;
+    xmlnode *file;
+    xmlnode *file_child;
+    gboolean was_set = FALSE;
+    gchar *output;
+    int length;
+    
+    current_cache = purple_util_read_xml_from_file(BNET_FILE_CACHE, "Battle.net data cache");
+    
+    if (current_cache != NULL) {
+        // wrong root name, replace
+        if (!g_str_equal(current_cache->name, "cache")) {
+            xmlnode_free(current_cache);
+            current_cache = xmlnode_new("cache");
+        }
+        
+        // find any matching entries and replace them
+        for (file = current_cache->child; file; file = file->next) {
+            if (file->type != XMLNODE_TYPE_TAG) {
+                continue;
+            }
+            if (g_str_equal(file->name, "file")) {
+                gchar *current_name = g_strdup(xmlnode_get_attrib(file, "name"));
+                gchar *current_key = g_strdup(xmlnode_get_attrib(file, "key"));
+                if (g_str_equal(name, current_name) &&
+                        g_str_equal(key, current_key)) {
+                    gchar buf[G_ASCII_DTOSTR_BUF_SIZE];
+                    g_ascii_dtostr(buf, G_ASCII_DTOSTR_BUF_SIZE, timestamp);
+                    xmlnode_set_attrib(file,"timestamp", buf);
+                    for (file_child = file->child; file_child; file_child = file_child->next) {
+                        if (file_child->type != XMLNODE_TYPE_DATA) {
+                            continue;
+                        }
+                        g_free(file_child->data);
+                        file_child->data = val;
+                        was_set = TRUE;
+                    }
+                    if (!was_set) {
+                        xmlnode_insert_data(file, val, -1);
+                        was_set = TRUE;
+                    }
+                    break;
+                }
+            }
+        }
+    } else {
+        current_cache = xmlnode_new("cache");
+    }
+    
+    // not found, new file
+    if (!was_set) {
+        xmlnode *file = xmlnode_new_child(current_cache, "file");
+        gchar buf[G_ASCII_DTOSTR_BUF_SIZE];
+        g_ascii_dtostr(buf, G_ASCII_DTOSTR_BUF_SIZE, timestamp);
+        xmlnode_set_attrib(file, "name", name);
+        xmlnode_set_attrib(file, "key", key);
+        xmlnode_set_attrib(file, "timestamp", buf);
+        xmlnode_insert_data(file, val, -1);
+    }
+    
+    // save to bnet-cache.xml
+	output = xmlnode_to_formatted_str(current_cache, &length);
+	xmlnode_free(current_cache);
+	purple_util_write_data_to_file(BNET_FILE_CACHE, output, length);
+}
+
+static gchar *
+bnet_cache_get(BnetConnectionData *bnet, gchar *name, guint64 *timestamp, gchar *key)
+{
+    xmlnode *current_cache;
+    xmlnode *file;
+    
+    *timestamp = 0;
+    current_cache = purple_util_read_xml_from_file(BNET_FILE_CACHE, "Battle.net data cache");
+    
+    if (current_cache != NULL) {
+        // wrong root name
+        if (!g_str_equal(current_cache->name, "cache")) {
+            return NULL;
+        }
+        
+        // find any matching entries and replace them
+        for (file = current_cache->child; file; file = file->next) {
+            if (file->type != XMLNODE_TYPE_TAG) {
+                continue;
+            }
+            if (g_str_equal(file->name, "file")) {
+                const gchar *current_name = xmlnode_get_attrib(file, "name");
+                const gchar *current_key = xmlnode_get_attrib(file, "key");
+                if (g_str_equal(name, current_name) &&
+                        g_str_equal(key, current_key)) {
+                    const gchar *current_timestamp = xmlnode_get_attrib(file, "timestamp");
+                    const gchar *current_value = xmlnode_get_data(file);
+                    *timestamp = g_ascii_strtod(current_timestamp, NULL);
+                    return g_strdup(current_value);
+                }
+            }
+        }
+    }
+    
+    return NULL;
+}
+
+static void
+bnet_news_save(BnetConnectionData *bnet)
+{
+    GList *el;
+    BnetPacket *pkt;
+    gchar *cache_key;
+    gchar *cache_val;
+    
+    pkt = bnet_packet_create(BNET_PACKET_RAW);
+    bnet_packet_insert(pkt, bnet->server, BNET_SIZE_CSTRING);
+    bnet_packet_insert(pkt, &bnet->product_id, BNET_SIZE_DWORD);
+    cache_key = bnet_packet_serialize(pkt);
+    
+    pkt = bnet_packet_create(BNET_PACKET_RAW);
+    bnet_packet_insert(pkt, &bnet->news_count, BNET_SIZE_BYTE);
+    el = g_list_first(bnet->news);
+    while (el != NULL) {
+        BnetNewsItem *item = el->data;
+        
+        bnet_packet_insert(pkt, &item->timestamp, BNET_SIZE_DWORD);
+        bnet_packet_insert(pkt, item->message, BNET_SIZE_CSTRING);
+    
+        el = g_list_next(el);
+    }
+    cache_val = bnet_packet_serialize(pkt);
+    bnet_cache_set(bnet, "pkt:SID_NEWS_INFO", bnet->news_latest, cache_key, cache_val);
+    g_free(cache_key);
+    g_free(cache_val);
+}
+
+static void
+bnet_news_load(BnetConnectionData *bnet)
+{
+    BnetPacket *pkt;
+    gchar *cache_key;
+    gchar *cache_val;
+    int i;
+    guint64 timestamp;
+    
+    pkt = bnet_packet_create(BNET_PACKET_RAW);
+    bnet_packet_insert(pkt, bnet->server, BNET_SIZE_CSTRING);
+    bnet_packet_insert(pkt, &bnet->product_id, BNET_SIZE_DWORD);
+    cache_key = bnet_packet_serialize(pkt);
+    cache_val = bnet_cache_get(bnet, "pkt:SID_NEWS_INFO", &timestamp, cache_key);
+    
+    bnet->news_latest = timestamp;
+    if (cache_val == NULL) {
+        bnet->news_count = 0;
+        bnet->news = NULL;
+    } else {
+        pkt = bnet_packet_deserialize(cache_val);
+        if (bnet_packet_can_read(pkt, 1)) {
+            bnet->news_count = bnet_packet_read_byte(pkt);
+            for (i = 0; i < bnet->news_count; i++) {
+                BnetNewsItem *item = g_new0(BnetNewsItem, 1);
+                guint32 timestamp = bnet_packet_read_dword(pkt);
+                gchar *message = bnet_packet_read_cstring(pkt);
+                GList *el2 = g_list_first(bnet->news);
+                
+                while (el2 != NULL) {
+                    if (((BnetNewsItem *)el2->data)->timestamp == timestamp) {
+                        purple_debug_warning("bnet", "duplicate in bnet_news_load\n");
+                    }
+                    el2 = g_list_next(el2);
+                }
+                
+                item->timestamp = timestamp;
+                item->message = message;
+                
+                bnet->news = g_list_append(bnet->news, item);
+            }
+        }
+        bnet_packet_free(pkt);
+        g_free(cache_val);
+    }
+    g_free(cache_key);
+}
+
+static void
 bnet_action_show_news(PurplePluginAction *action)
 {
     PurpleConnection *gc = action->context;
@@ -7271,8 +7467,6 @@ bnet_action_show_news(PurplePluginAction *action)
     int i;
 
     if (bnet->news != NULL) {
-        bnet->news = g_list_sort(bnet->news, bnet_news_item_sort);
-
         for (i = 0; i < BNET_MOTD_TYPES; i++) {
             const gchar *type;
             gchar *name;

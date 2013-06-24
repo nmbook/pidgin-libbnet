@@ -83,6 +83,23 @@ bnet_packet_refer_bnls(const gchar *start, const gsize length)
     return bnet_packet;
 }
 
+BnetPacket *
+bnet_packet_deserialize(const gchar *str)
+{
+    BnetPacket *bnet_packet;
+    guchar *ret;
+    gsize ret_len;
+    
+    ret = purple_base64_decode(str, &ret_len);
+    bnet_packet = g_new0(BnetPacket, 1);
+    bnet_packet->pos = 2;
+    bnet_packet->len = (guint16)ret_len;
+    bnet_packet->data = (gchar *)ret;
+    bnet_packet->allocd = FALSE;
+    
+    return bnet_packet;
+}
+
 gboolean
 bnet_packet_can_read(BnetPacket *bnet_packet, const gsize size)
 {
@@ -229,6 +246,23 @@ bnet_packet_send_bnls(BnetPacket *bnet_packet, const guint8 id, const int fd)
     ret = write(fd, bnet_packet->data, bnet_packet->pos);
     
     purple_debug_misc("bnet", "BNLS C>S 0x%02x: length %d\n", id, bnet_packet->pos);
+    
+    bnet_packet_free(bnet_packet);
+    
+    return ret;
+}
+
+gchar *
+bnet_packet_serialize(BnetPacket *bnet_packet)
+{
+    gchar *ret;
+    
+    *(bnet_packet->data + 0) = bnet_packet->pos & 0xFF;
+    *(bnet_packet->data + 1) = (bnet_packet->pos >> 8) & 0xFF;
+    
+    purple_debug_misc("bnet", "SERIALIZE: length %d\n", bnet_packet->pos);
+    
+    ret = purple_base64_encode((guchar *)bnet_packet->data, bnet_packet->pos);
     
     bnet_packet_free(bnet_packet);
     

@@ -90,6 +90,8 @@
 #define BNET_DEFAULT_GROUP_FRIENDS "Friends"
 #define BNET_DEFAULT_GROUP_CLAN    "Clan %T members"
 
+#define BNET_FILE_CACHE  "bnet-cache.xml"
+
 // logon steps
 #define BNET_STEP_COUNT      5
 #define BNET_STEP_BNLS       0
@@ -739,16 +741,20 @@ typedef struct {
     guint32 ka_tick;
     // handle for keep alive timer
     guint ka_handle;
+    
     // welcome messages, stored for later
     //GList *welcome_msgs;
-    // number of news messages
-    guint32 news_count;
-    // news messages
-    GList *news;
     // message of the days for various things
     BnetMotdItem motds[BNET_MOTD_TYPES];
     // email fields for dialog
     PurpleRequestFields *set_email_fields;
+    
+    // number of news messages
+    guint32 news_count;
+    // timestamp of latest news item
+    guint32 news_latest;
+    // news messages
+    GList *news;
     
     // roomlist data:
     // a GList<char *> - a copy of the roomlist
@@ -1036,7 +1042,7 @@ static int  bnet_send_READUSERDATA(const BnetConnectionData *bnet,
             int request_cookie, const char *username, char **keys);
 static int  bnet_send_WRITEUSERDATA(const BnetConnectionData *bnet,
             const char *sex, const char *age, const char *location, const char *description);
-static int  bnet_send_NEWS_INFO(const BnetConnectionData *bnet);
+static int  bnet_send_NEWS_INFO(const BnetConnectionData *bnet, guint32 timestamp);
 static int  bnet_send_AUTH_INFO(const BnetConnectionData *bnet);
 static int  bnet_send_AUTH_CHECK(const BnetConnectionData *bnet,
             guint32 exe_version, guint32 exe_checksum, char *exe_info);
@@ -1198,6 +1204,8 @@ static void bnet_lookup_info_w3_clan_stats(BnetConnectionData *bnet);
 static void bnet_lookup_info_w3_clan_mi(BnetConnectionData *bnet);
 static void bnet_action_set_motd_cb(gpointer data);
 static gint bnet_news_item_sort(gconstpointer a, gconstpointer b);
+static void bnet_news_save(BnetConnectionData *bnet);
+static void bnet_news_load(BnetConnectionData *bnet);
 static void bnet_action_show_news(PurplePluginAction *action);
 static void bnet_action_set_motd(PurplePluginAction *action);
 static void bnet_action_set_user_data(PurplePluginAction *action);

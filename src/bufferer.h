@@ -51,6 +51,7 @@
 #define BNET_PACKET_BNCS  4
 #define BNET_PACKET_BNLS  3
 #define BNET_PACKET_D2MCP 3
+#define BNET_PACKET_RAW   2
 
 typedef struct {
     gchar *data;
@@ -66,6 +67,7 @@ gboolean bnet_packet_insert(BnetPacket *bnet_packet, gconstpointer data, const g
 BnetPacket *bnet_packet_refer(const gchar *start, const gsize length);
 BnetPacket *bnet_packet_refer_bnls(const gchar *start, const gsize length);
 #define bnet_packet_refer_d2mcp bnet_packet_refer_bnls
+BnetPacket *bnet_packet_deserialize(const gchar *start);
 
 gboolean bnet_packet_can_read(BnetPacket *bnet_packet, const gsize size);
 void *bnet_packet_read(BnetPacket *bnet_packet, const gsize size);
@@ -80,6 +82,7 @@ BnetPacket *bnet_packet_create(const gsize header_length);
 int bnet_packet_send(BnetPacket *bnet_packet, const guint8 id, const int fd);
 int bnet_packet_send_bnls(BnetPacket *bnet_packet, const guint8 id, const int fd);
 #define bnet_packet_send_d2mcp bnet_packet_send_bnls
+gchar *bnet_packet_serialize(BnetPacket *bnet_packet);
 
 char *bnet_packet_debug(const BnetPacket *bnet_packet);
 void clear_line(char *line, int size);
