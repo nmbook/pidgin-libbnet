@@ -10,7 +10,7 @@
 
   ;Name and file
   Name "Battle.net Protocol for Pidgin"
-  OutFile "pidgin-libbnet-0.9.0.exe"
+  OutFile "pidgin-libbnet-1.0.0.exe"
 
   ;Default installation folder
   InstallDir "$PROGRAMFILES\Pidgin"
@@ -21,7 +21,7 @@
   ;Request application privileges for Windows Vista
   RequestExecutionLevel admin
   
-  BrandingText "pidgin-libbnet-0.9.0"
+  BrandingText "pidgin-libbnet-1.0.0"
 
 ;--------------------------------
 ;Interface Settings
@@ -109,8 +109,8 @@ Section "-libbnet" SecLibbnet
   ;save libbnet.dll
   File "/oname=plugins\libbnet.dll" libbnet.dll
   
-  ;save libgmp-10.dll
-  File "/oname=libgmp-10.dll" libgmp-10.dll
+  ;save libgmp-3.dll
+  File "/oname=libgmp-3.dll" libgmp-3.dll
   
   ;save pixmaps
   File "/oname=pixmaps\pidgin\protocols\16\bnet.png" bnet-16.png
@@ -143,6 +143,7 @@ Section "Uninstall"
 
   Delete "plugins\libbnet.dll"
   
+  Delete "libgmp-3.dll"
   Delete "libgmp-10.dll"
   
   Delete "pixmaps\pidgin\protocols\16\bnet.png"

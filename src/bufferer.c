@@ -91,8 +91,15 @@ bnet_packet_deserialize(const gchar *str)
     gsize ret_len;
     
     ret = purple_base64_decode(str, &ret_len);
+    
+    purple_debug_misc("bnet", "DESERIALIZE: length %d\n", ret_len);
+    
+    if (ret == NULL) {
+        return NULL;
+    }
+    
     bnet_packet = g_new0(BnetPacket, 1);
-    bnet_packet->pos = 2;
+    bnet_packet->pos = 0;
     bnet_packet->len = (guint16)ret_len;
     bnet_packet->data = (gchar *)ret;
     bnet_packet->allocd = FALSE;
@@ -129,19 +136,19 @@ bnet_packet_read_cstring(BnetPacket *bnet_packet)
     char *ret;
     
     if (bnet_packet->allocd == TRUE) {
-        purple_debug_error("bnet", "read cstring fail 1: allocd=true");
+        purple_debug_error("bnet", "read cstring fail 1: allocd=true\n");
         return NULL;
     }
     
     if (bnet_packet->len < bnet_packet->pos + 1) {
-        purple_debug_error("bnet", "read cstring fail 2: out of range");
+        purple_debug_error("bnet", "read cstring fail 2: out of range\n");
         return NULL;
     }
     
     while (*(bnet_packet->data + bnet_packet->pos + size) != 0) {
         size++;
         if (bnet_packet->len < bnet_packet->pos + size) {
-            purple_debug_error("bnet", "read cstring fail 3: out of range");
+            purple_debug_error("bnet", "read cstring fail 3: out of range\n");
             return NULL;
         }
     }
@@ -161,6 +168,7 @@ guint64
 bnet_packet_read_qword(BnetPacket *bnet_packet)
 {
     void *ret = bnet_packet_read(bnet_packet, BNET_SIZE_FILETIME);
+    if (ret == NULL) return 0;
     guint64 i = *((guint64 *)ret);
     g_free(ret);
     return i;
@@ -170,6 +178,7 @@ guint32
 bnet_packet_read_dword(BnetPacket *bnet_packet)
 {
     void *ret = bnet_packet_read(bnet_packet, BNET_SIZE_DWORD);
+    if (ret == NULL) return 0;
     guint32 i = *((guint32 *)ret);
     g_free(ret);
     return i;
@@ -179,6 +188,7 @@ guint16
 bnet_packet_read_word(BnetPacket *bnet_packet)
 {
     void *ret = bnet_packet_read(bnet_packet, BNET_SIZE_WORD);
+    if (ret == NULL) return 0;
     guint16 i = *((guint16 *)ret);
     g_free(ret);
     return i;
@@ -188,6 +198,7 @@ guint8
 bnet_packet_read_byte(BnetPacket *bnet_packet)
 {
     void *ret = bnet_packet_read(bnet_packet, BNET_SIZE_BYTE);
+    if (ret == NULL) return 0;
     guint8 i = *((guint8 *)ret);
     g_free(ret);
     return i;
@@ -256,9 +267,6 @@ gchar *
 bnet_packet_serialize(BnetPacket *bnet_packet)
 {
     gchar *ret;
-    
-    *(bnet_packet->data + 0) = bnet_packet->pos & 0xFF;
-    *(bnet_packet->data + 1) = (bnet_packet->pos >> 8) & 0xFF;
     
     purple_debug_misc("bnet", "SERIALIZE: length %d\n", bnet_packet->pos);
     

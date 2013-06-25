@@ -194,9 +194,11 @@ bnet_connect(PurpleAccount *account, const gboolean do_register)
     bnet->username = g_strdup(userparts[0]);
     bnet->server = g_strdup(userparts[1]);
     g_strfreev(userparts);
-
-    // set display name
-    purple_connection_set_display_name(gc, bnet->username);
+    
+    bnet->key_owner = g_strdup(purple_account_get_string(bnet->account, "key_owner", bnet->username));
+    if (strlen(bnet->key_owner) == 0) {
+        bnet->key_owner = g_strdup(bnet->username);
+    }
 
     if (bnet->emulate_telnet) {
         // connect to bnet
@@ -654,12 +656,9 @@ bnet_realm_send_STARTUP(const BnetConnectionData *bnet)
     int ret = -1;
 
     int i;
-    for (i = 0; i < 16; i++) {
-        purple_debug_info("bnet", "MCP value %d = 0x%08x\n", i, bnet->mcp_data[i]);
-    }
     pkt = bnet_packet_create(BNET_PACKET_D2MCP);
     for (i = 0; i < 16; i++) {
-        bnet_packet_insert(pkt, &bnet->mcp_data[i], BNET_SIZE_DWORD);
+        bnet_packet_insert(pkt, &bnet->d2mcp_data[i], BNET_SIZE_DWORD);
     }
     bnet_packet_insert(pkt, bnet->unique_username, BNET_SIZE_CSTRING);
     
@@ -730,8 +729,10 @@ bnet_realm_input_cb(gpointer data, gint source, PurpleInputCondition cond)
         gchar *tmp = NULL;
         tmp = g_strdup_printf("Lost connection with realm server: %s\n",
                 g_strerror(errno));
-        purple_connection_error_reason(gc,
-                PURPLE_CONNECTION_ERROR_NETWORK_ERROR, tmp);
+        if (!bnet->d2mcp_on_char) {
+            // throw purple_notify
+            // 
+        }
         purple_debug_info("bnet", tmp);
         g_free(tmp);
         if (bnet->sd2mcp.fd != 0) {
@@ -794,6 +795,7 @@ bnet_realm_read_input(BnetConnectionData *bnet, int len)
 static void
 bnet_realm_recv_STARTUP(BnetConnectionData *bnet, BnetPacket *pkt)
 {
+    gchar *tmp;
     BnetRealmStatus status = bnet_packet_read_dword(pkt);
     switch (status) {
         case BNET_REALM_CONNECT_NOBNCS2:
@@ -801,22 +803,32 @@ bnet_realm_recv_STARTUP(BnetConnectionData *bnet, BnetPacket *pkt)
         case BNET_REALM_CONNECT_NOBNCS11:
         case BNET_REALM_CONNECT_NOBNCS12:
         case BNET_REALM_CONNECT_NOBNCS13:
-            // TODO throw error
             // did not detect bncs conn
-            purple_debug_warning("bnet", "MCP says you are not on a BNCS server 0x%02x.\n", status);
+            tmp = g_strdup_printf("The Diablo II realm server could not detect your Battle.net connection (0x%02x).", status);
+            purple_notify_error(bnet->account->gc, "Realm Logon Error", tmp,
+                    "Unable to log on to the Diablo II realm. Continuing channel log on.");
+            g_free(tmp);
+            bnet_realm_logon_cb(bnet);
             break;
         case BNET_REALM_CONNECT_TEMPBAN:
-            // TODO throw error
             // temporary ban
-            purple_debug_warning("bnet", "MCP says you are temporarily banned from realm play.\n");
+            purple_notify_error(bnet->account->gc, "Realm Logon Error", "The Diablo II realm server has temporarily banned you from play.",
+                    "Unable to log on to the Diablo II realm. Continuing channel log on.");
+            bnet_realm_logon_cb(bnet);
             break;
         case BNET_REALM_CONNECT_KEYBAN:
-            // TODO throw error
             // key is banned
-            purple_debug_warning("bnet", "MCP says your key is banned from realm play.\n");
+            purple_notify_error(bnet->account->gc, "Realm Logon Error", "The Diablo II realm server has permanently banned you from play.",
+                    "Unable to log on to the Diablo II realm. Continuing channel log on.");
+            bnet_realm_logon_cb(bnet);
             break;
-        default: // TODO check error
-            purple_debug_warning("bnet", "MCP says non-zero success 0x%02x.\n", status);
+        default: // is this an error?
+            tmp = g_strdup_printf("Diablo II realm logon failed (0x%02x).", status);
+            purple_notify_error(bnet->account->gc, "Realm Logon Error", tmp,
+                    "Unable to log on to the Diablo II realm. Continuing channel log on.");
+            g_free(tmp);
+            bnet_realm_logon_cb(bnet);
+            break;
         case BNET_REALM_SUCCESS:
             // success
             bnet_realm_send_CHARLIST2(bnet, 8);
@@ -827,29 +839,40 @@ bnet_realm_recv_STARTUP(BnetConnectionData *bnet, BnetPacket *pkt)
 static void
 bnet_realm_recv_CHARLOGON(BnetConnectionData *bnet, BnetPacket *pkt)
 {
+    gchar *tmp;
     BnetRealmStatus status = bnet_packet_read_dword(pkt);
     switch (status) {
         case BNET_REALM_CHAR_PDNE:
-            // TODO throw error
             // player does not exist
-            purple_debug_warning("bnet", "MCP says player DNE.\n");
+            purple_notify_error(bnet->account->gc, "Character Logon Error", "The chosen character does not exist.",
+                    "Unable to log on to your Diablo II character. Continuing channel log on.");
+            bnet_realm_logon_cb(bnet);
             break;
         case BNET_REALM_CHAR_FAILED:
-            // TODO throw error
             // logon failed
-            purple_debug_warning("bnet", "MCP says logon failed.\n");
+            purple_notify_error(bnet->account->gc, "Character Logon Error", "Character logon failed.",
+                    "Unable to log on to your Diablo II character. Continuing channel log on.");
+            bnet_realm_logon_cb(bnet);
             break;
         case BNET_REALM_CHAR_EXPIRED:
-            // TODO throw error
             // char expired
-            purple_debug_warning("bnet", "MCP says that character is expired.\n");
+            purple_notify_error(bnet->account->gc, "Character Logon Error", "That character is expired.",
+                    "Unable to log on to your Diablo II character. Continuing channel log on.");
+            bnet_realm_logon_cb(bnet);
             break;
-        default: // TODO check error
+        default:
+            // char expired
+            tmp = g_strdup_printf("Character logon failed (0x%02x).", status);
+            purple_notify_error(bnet->account->gc, "Character Logon Error", tmp,
+                    "Unable to log on to your Diablo II character. Continuing channel log on.");
+            g_free(tmp);
+            bnet_realm_logon_cb(bnet);
+            break;
         case BNET_REALM_SUCCESS:
             // success
+            bnet->d2mcp_on_char = TRUE;
             bnet_realm_send_MOTD(bnet);
-            bnet_send_GETCHANNELLIST(bnet);
-            bnet_send_ENTERCHAT(bnet);
+            bnet_realm_logon_cb(bnet);
             break;
     }
 }
@@ -863,25 +886,40 @@ bnet_realm_recv_MOTD(BnetConnectionData *bnet, BnetPacket *pkt)
     message = bnet_packet_read_cstring(pkt);
     
     bnet_motd_free(bnet, BNET_MOTD_TYPE_D2MCP);
-    bnet->motds[BNET_MOTD_TYPE_D2MCP].name = g_strdup(bnet->mcp_name);
-    bnet->motds[BNET_MOTD_TYPE_D2MCP].subname = g_strdup(bnet->mcp_descr);
+    bnet->motds[BNET_MOTD_TYPE_D2MCP].name = g_strdup(bnet->d2mcp_name);
+    bnet->motds[BNET_MOTD_TYPE_D2MCP].subname = g_strdup(bnet->d2mcp_descr);
     bnet->motds[BNET_MOTD_TYPE_D2MCP].message = message;
 }
 
 static void
 bnet_realm_recv_CHARLIST2(BnetConnectionData *bnet, BnetPacket *pkt)
 {
-    guint16 num_req;
-    guint32 num_avail;
+    //guint16 num_req;
+    //guint32 num_avail;
     guint16 num_ret;
+    GList *char_list = NULL;
+    gboolean listing = FALSE;
     int i;
     gchar *auto_logon = g_strdup(purple_account_get_string(bnet->account, "d2realm_char", ""));
-    GList *chars = NULL;
     gboolean do_auto_logon = FALSE;
     
-    num_req = bnet_packet_read_word(pkt);
-    num_avail = bnet_packet_read_dword(pkt);
+    /*num_req = */bnet_packet_read_word(pkt);
+    /*num_avail = */bnet_packet_read_dword(pkt);
     num_ret = bnet_packet_read_word(pkt);
+    if (auto_logon && strlen(auto_logon) > 0) {
+        do_auto_logon = TRUE;
+    } else if (num_ret == 0) {
+        purple_notify_error(bnet->account->gc, "Realm Logon Error", "There are no Diablo II characters on your account.",
+                "Unable to log on to your Diablo II character. Continuing channel log on.");
+        bnet_realm_logon_cb(bnet);
+        g_free(auto_logon);
+        return;
+    } else if (num_ret == 1) {
+        do_auto_logon = TRUE;
+    } else {
+        listing = TRUE;
+        purple_debug_info("bnet", "MCP There are multiple characters on this account!\n");
+    }
     do_auto_logon = (num_ret == 1);
     
     for (i = 0; i < num_ret; i++) {
@@ -889,15 +927,22 @@ bnet_realm_recv_CHARLIST2(BnetConnectionData *bnet, BnetPacket *pkt)
         gchar *char_name = bnet_packet_read_cstring(pkt);
         gchar *char_stats = bnet_packet_read_cstring(pkt);
         
-        // TODO if not auto logon populate dialog
+        if (listing) {
+            BnetD2RealmCharacter *character = g_new0(BnetD2RealmCharacter, 1);
+            character->expires = exp_date;
+            character->name = char_name;
+            character->stats = char_stats;
+            char_list = g_list_append(char_list, character);
+        }
+        
         if (do_auto_logon && strlen(auto_logon) == 0) {
             auto_logon = g_strdup(char_name);
         }
         
-        if (strcmp(auto_logon, char_name) == 0) {
-            bnet->mcp_char_exp = exp_date;
-            bnet->mcp_char = g_strdup(char_name);
-            bnet->mcp_char_stats = g_strdup(char_stats);
+        if (g_ascii_strcasecmp(auto_logon, char_name) == 0) {
+            bnet->d2mcp_char_exp = exp_date;
+            bnet->d2mcp_char = g_strdup(char_name);
+            bnet->d2mcp_char_stats = g_strdup(char_stats);
         }
         
         g_free(char_name);
@@ -907,6 +952,10 @@ bnet_realm_recv_CHARLIST2(BnetConnectionData *bnet, BnetPacket *pkt)
     if (do_auto_logon) {
         bnet_realm_send_CHARLOGON(bnet, auto_logon);
     }
+    if (listing) {
+        bnet_realm_character_list(bnet, char_list);
+    }
+    
     g_free(auto_logon);
 }
 
@@ -1227,14 +1276,9 @@ bnet_send_CDKEY(const BnetConnectionData *bnet)
     BnetPacket *pkt = NULL;
     int ret = -1;
     guint32 key_spawn = 0;
-    const char *key_owner = purple_account_get_string(bnet->account, "key_owner", "");
     BnetKey *keys = NULL;
     char key_normalized[14];
     gboolean keys_are_valid = FALSE;
-
-    if (strlen(key_owner) == 0) {
-        key_owner = bnet->username;
-    }
 
     keys = g_new0(BnetKey, 1);
 
@@ -1255,7 +1299,7 @@ bnet_send_CDKEY(const BnetConnectionData *bnet)
     pkt = bnet_packet_create(BNET_PACKET_BNCS);
     bnet_packet_insert(pkt, &key_spawn, BNET_SIZE_DWORD);
     bnet_packet_insert(pkt, key_normalized, BNET_SIZE_CSTRING);
-    bnet_packet_insert(pkt, key_owner, BNET_SIZE_CSTRING);
+    bnet_packet_insert(pkt, bnet->key_owner, BNET_SIZE_CSTRING);
 
     g_free(keys);
 
@@ -1285,13 +1329,8 @@ bnet_send_CDKEY2(const BnetConnectionData *bnet)
     BnetPacket *pkt = NULL;
     int ret = -1;
     guint32 key_spawn = 0;
-    const char *key_owner = purple_account_get_string(bnet->account, "key_owner", "");
     BnetKey *keys = NULL;
     gboolean keys_are_valid = FALSE;
-
-    if (strlen(key_owner) == 0) {
-        key_owner = bnet->username;
-    }
 
     keys = g_new0(BnetKey, 1);
 
@@ -1317,7 +1356,7 @@ bnet_send_CDKEY2(const BnetConnectionData *bnet)
     bnet_packet_insert(pkt, &bnet->server_cookie, BNET_SIZE_DWORD);
     bnet_packet_insert(pkt, &bnet->client_cookie, BNET_SIZE_DWORD);
     bnet_packet_insert(pkt, keys->key_hash, SHA1_HASH_SIZE);
-    bnet_packet_insert(pkt, key_owner, BNET_SIZE_CSTRING);
+    bnet_packet_insert(pkt, bnet->key_owner, BNET_SIZE_CSTRING);
 
     g_free(keys);
 
@@ -1696,14 +1735,9 @@ bnet_send_AUTH_CHECK(const BnetConnectionData *bnet,
     int ret = -1;
     guint32 key_count = 0;
     guint32 key_spawn = 0;
-    const char *key_owner = purple_account_get_string(bnet->account, "key_owner", "");
     BnetKey *keys = NULL;
     int i = 0;
     gboolean keys_are_valid = FALSE;
-
-    if (strlen(key_owner) == 0) {
-        key_owner = bnet->username;
-    }
 
     purple_debug_info("bnet", "server cookie: %08x\n", bnet->server_cookie);
     purple_debug_info("bnet", "client cookie: %08x\n", bnet->client_cookie);
@@ -1742,7 +1776,7 @@ bnet_send_AUTH_CHECK(const BnetConnectionData *bnet,
         bnet_packet_insert(pkt, &keys[i], sizeof(BnetKey));
     }
     bnet_packet_insert(pkt, exe_info, BNET_SIZE_CSTRING);
-    bnet_packet_insert(pkt, key_owner, BNET_SIZE_CSTRING);
+    bnet_packet_insert(pkt, bnet->key_owner, BNET_SIZE_CSTRING);
 
     g_free(keys);
 
@@ -1973,14 +2007,21 @@ bnet_enter_channel(const BnetConnectionData *bnet)
 }
 
 static void
+bnet_realm_logon_cb(BnetConnectionData *bnet)
+{
+    bnet_send_GETCHANNELLIST(bnet);
+    bnet_send_ENTERCHAT(bnet);
+}
+
+static void
 bnet_enter_chat(BnetConnectionData *bnet)
 {
     if (bnet_is_d2(bnet)) {
         if (purple_account_get_bool(bnet->account, "use_d2realm", FALSE)) {
+            bnet->d2mcp_on_char = FALSE;
             bnet_send_QUERYREALMS2(bnet);
         } else {
-            bnet_send_GETCHANNELLIST(bnet);
-            bnet_send_ENTERCHAT(bnet);
+            bnet_realm_logon_cb(bnet);
         }
     } else if (bnet_is_w3(bnet)) {
         bnet->clan_info = bnet_clan_info_new();
@@ -2023,31 +2064,198 @@ bnet_realm_logon(const BnetConnectionData *bnet, const guint32 client_cookie,
 }
 
 static void
-bnet_realm_connect(BnetConnectionData *bnet, struct sockaddr_in mcp_addr,
-        const guint32 mcp_data[16], const gchar *bncs_unique_username)
+bnet_realm_connect(BnetConnectionData *bnet, struct sockaddr_in d2mcp_addr,
+        const guint32 d2mcp_data[16], const gchar *bncs_unique_username)
 {
     PurpleConnection *gc = bnet->account->gc;
-    PurpleProxyConnectData *mcp_conn_data;
-    char *addr_name = g_strdup(inet_ntoa(mcp_addr.sin_addr));
+    PurpleProxyConnectData *d2mcp_conn_data;
+    char *addr_name = g_strdup(inet_ntoa(d2mcp_addr.sin_addr));
     int i;
     
-    bnet->mcp_addr = addr_name;
-    bnet->mcp_port = mcp_addr.sin_port;
+    bnet->d2mcp_addr = addr_name;
+    bnet->d2mcp_port = d2mcp_addr.sin_port;
     for (i = 0; i < 16; i++) {
-        bnet->mcp_data[i] = mcp_data[i];
+        bnet->d2mcp_data[i] = d2mcp_data[i];
     }
     bnet->unique_username = g_strdup(bncs_unique_username);
+    purple_connection_set_display_name(gc, bncs_unique_username);
     
-    purple_debug_info("bnet", "Connecting to MCP %s:%d...\n", addr_name, mcp_addr.sin_port);
-    mcp_conn_data = purple_proxy_connect(gc, bnet->account, addr_name, mcp_addr.sin_port,
+    purple_debug_info("bnet", "Connecting to MCP %s:%d...\n", addr_name, d2mcp_addr.sin_port);
+    d2mcp_conn_data = purple_proxy_connect(gc, bnet->account, addr_name, d2mcp_addr.sin_port,
             bnet_realm_login_cb, gc);
-    if (mcp_conn_data == NULL) {
+    if (d2mcp_conn_data == NULL) {
         purple_connection_error_reason(gc,
                 PURPLE_CONNECTION_ERROR_NETWORK_ERROR,
                 "Unable to connect to the MCP server");
         return;
     }
-    bnet->sd2mcp.conn_data = mcp_conn_data;
+    bnet->sd2mcp.conn_data = d2mcp_conn_data;
+}
+
+static void
+bnet_request_cancel_realm_server_cb(gpointer data)
+{
+    BnetConnectionData *bnet;
+
+    bnet = data;
+    g_return_if_fail(bnet != NULL);
+    bnet_realm_logon_cb(bnet);
+}
+
+
+static void
+bnet_request_choose_realm_server_cb(gpointer data)
+{
+    BnetConnectionData *bnet;
+    PurpleRequestFields *fields;
+    GList *group_list; PurpleRequestFieldGroup *group;
+    GList *field_list; PurpleRequestField *field;
+    BnetD2RealmServer *server = NULL;
+
+    bnet = data;
+    g_return_if_fail(bnet != NULL);
+    fields = bnet->realm_server_fields;
+    g_return_if_fail(fields != NULL);
+    group_list = g_list_first(purple_request_fields_get_groups(fields));
+    g_return_if_fail(group_list != NULL);
+    group = group_list->data; // only one group
+    g_return_if_fail(group != NULL);
+    field_list = g_list_first(purple_request_field_group_get_fields(group));
+
+    while (field_list != NULL) {
+        field = field_list->data;
+        if (field != NULL) {
+            const gchar *name = purple_request_field_get_id(field);
+            if (strcmp(name, "servers") == 0) {
+                GList *sel = purple_request_field_list_get_selected(field);
+                if (sel != NULL) {
+                    server = sel->data;
+                }
+            }
+        }
+        field_list = g_list_next(field_list);
+    }
+    if (server != NULL) {
+        const gchar *d2realm_pass = purple_account_get_string(bnet->account, "d2realm_pass", "password");
+        bnet_realm_logon(bnet, bnet->client_cookie, server->name, d2realm_pass);
+    } else {
+        bnet_realm_logon_cb(bnet);
+    }
+}
+
+static void
+bnet_realm_server_list(BnetConnectionData *bnet, GList *server_list)
+{
+    GList *el;
+    PurpleRequestField *field;
+    PurpleRequestFields *fields = purple_request_fields_new();
+    PurpleRequestFieldGroup *group = purple_request_field_group_new("Choose a realm to connect to.");
+
+    field = purple_request_field_list_new("realms", "Realms");
+    purple_request_field_group_add_field(group, field);
+    purple_request_field_list_set_multi_select(field, FALSE);
+    el = g_list_first(server_list);
+    while (el != NULL) {
+        BnetD2RealmServer *server = el->data;
+        purple_request_field_list_add(field, server->name, server);
+        el = g_list_next(el);
+    }
+
+    purple_request_fields_add_group(fields, group);
+
+    bnet->realm_server_fields = fields;
+
+    purple_request_fields(bnet->account->gc, "Choose a Diablo II Realm Server",
+            NULL,
+            "Select a realm to log in to, then click Choose.",
+            fields,
+            "_Choose", (GCallback)bnet_request_choose_realm_server_cb,
+            "_Cancel", (GCallback)bnet_request_cancel_realm_server_cb,
+            bnet->account,
+            NULL, NULL,
+            bnet);
+}
+
+static void
+bnet_request_cancel_realm_character_cb(gpointer data)
+{
+    BnetConnectionData *bnet;
+
+    bnet = data;
+    g_return_if_fail(bnet != NULL);
+    bnet_realm_logon_cb(bnet);
+}
+
+static void
+bnet_request_choose_realm_character_cb(gpointer data)
+{
+    BnetConnectionData *bnet;
+    PurpleRequestFields *fields;
+    GList *group_list; PurpleRequestFieldGroup *group;
+    GList *field_list; PurpleRequestField *field;
+    BnetD2RealmCharacter *character = NULL;
+
+    bnet = data;
+    g_return_if_fail(bnet != NULL);
+    fields = bnet->realm_server_fields;
+    g_return_if_fail(fields != NULL);
+    group_list = g_list_first(purple_request_fields_get_groups(fields));
+    g_return_if_fail(group_list != NULL);
+    group = group_list->data; // only one group
+    g_return_if_fail(group != NULL);
+    field_list = g_list_first(purple_request_field_group_get_fields(group));
+
+    while (field_list != NULL) {
+        field = field_list->data;
+        if (field != NULL) {
+            const gchar *name = purple_request_field_get_id(field);
+            if (strcmp(name, "characters") == 0) {
+                GList *sel = purple_request_field_list_get_selected(field);
+                if (sel != NULL) {
+                    character = sel->data;
+                }
+            }
+        }
+        field_list = g_list_next(field_list);
+    }
+    if (character != NULL) {
+        bnet_realm_send_CHARLOGON(bnet, character->name);
+    } else {
+        bnet_realm_logon_cb(bnet);
+    }
+}
+
+static void
+bnet_realm_character_list(BnetConnectionData *bnet, GList *char_list)
+{
+    GList *el;
+    PurpleRequestField *field;
+    PurpleRequestFields *fields = purple_request_fields_new();
+    PurpleRequestFieldGroup *group = purple_request_field_group_new("Choose a character to log on as.");
+
+    field = purple_request_field_list_new("characters", "Characters");
+    purple_request_field_group_add_field(group, field);
+    purple_request_field_list_set_multi_select(field, FALSE);
+    el = g_list_first(char_list);
+    while (el != NULL) {
+        BnetD2RealmCharacter *character = el->data;
+        purple_request_field_list_add(field, character->name, character);
+        el = g_list_next(el);
+    }
+
+    purple_request_fields_add_group(fields, group);
+
+    bnet->realm_character_fields = fields;
+
+    purple_request_fields(bnet->account->gc, "Choose a Diablo II Character",
+            NULL,
+            "Select a character to log in as, then click Choose.",
+            fields,
+            "_Choose", (GCallback)bnet_request_choose_realm_character_cb,
+            "_Cancel", (GCallback)bnet_request_cancel_realm_character_cb,
+            bnet->account,
+            NULL, NULL,
+            bnet);
 }
 
 static gboolean
@@ -2375,6 +2583,7 @@ bnet_recv_ENTERCHAT(BnetConnectionData *bnet, BnetPacket *pkt)
     bnet->my_statstring = statstring;
     bnet->my_accountname = account;
     bnet->unique_username = unique_username;
+    purple_connection_set_display_name(bnet->account->gc, unique_username);
 
     if (bnet_is_d2(bnet) || bnet_is_w3(bnet)) {
         // reset news count
@@ -3766,6 +3975,7 @@ bnet_recv_W3PROFILE(BnetConnectionData *bnet, BnetPacket *pkt)
     BnetClanTag tag = (BnetClanTag) 0;
     gchar *s_clan = NULL;
     gchar *username = NULL;
+    gchar *tmp;
     
     cookie = bnet_packet_read_dword(pkt);
     status = bnet_packet_read_byte(pkt);
@@ -3783,6 +3993,10 @@ bnet_recv_W3PROFILE(BnetConnectionData *bnet, BnetPacket *pkt)
             bnet->lookup_info_found_clan = TRUE;
             break;
         default:
+            tmp = g_strdup_printf("Could not retrieve user information for %s (status code 0x%02x).", username, status);
+            purple_notify_error(bnet->account->gc, "Warcraft III Profile Error", tmp,
+                    "Unable to get the clan tag for this user. Assuming that this user is not in a clan.");
+            g_free(tmp);
             purple_debug_warning("bnet", "Error retrieving profile for %s: status code 0x%02x\n", username, status);
             break;
     }
@@ -3871,42 +4085,58 @@ bnet_get_w3record_type_string(BnetW3RecordType type)
 static void
 bnet_recv_LOGONREALMEX(BnetConnectionData *bnet, BnetPacket *pkt)
 {
-    guint32 mcp_cookie;
-    BnetRealmStatus mcp_status;
+    guint32 d2mcp_cookie;
+    BnetRealmStatus d2mcp_status;
     
-    mcp_cookie = bnet_packet_read_dword(pkt);
-    mcp_status = bnet_packet_read_dword(pkt);
+    d2mcp_cookie = bnet_packet_read_dword(pkt);
+    d2mcp_status = bnet_packet_read_dword(pkt);
     if (bnet_packet_can_read(pkt, 65)) {
-        guint32 mcp_ip;
-        guint32 mcp_port;
-        guint32 mcp_data[16];
+        guint32 d2mcp_ip;
+        guint32 d2mcp_port;
+        guint32 d2mcp_data[16];
         gchar *bncs_unique_username;
         
-        struct sockaddr_in mcp_addr;
+        struct sockaddr_in d2mcp_addr;
         int i;
 
-        mcp_data[0] = mcp_cookie;
-        mcp_data[1] = mcp_status;
-        mcp_data[2] = bnet_packet_read_dword(pkt);
-        mcp_data[3] = bnet_packet_read_dword(pkt);
-        mcp_ip = bnet_packet_read_dword(pkt);
-        mcp_port = bnet_packet_read_dword(pkt);
+        d2mcp_data[0] = d2mcp_cookie;
+        d2mcp_data[1] = d2mcp_status;
+        d2mcp_data[2] = bnet_packet_read_dword(pkt);
+        d2mcp_data[3] = bnet_packet_read_dword(pkt);
+        d2mcp_ip = bnet_packet_read_dword(pkt);
+        d2mcp_port = bnet_packet_read_dword(pkt);
         for (i = 4; i < 16; i++) {
-            mcp_data[i] = bnet_packet_read_dword(pkt);
-            purple_debug_info("bnet", "MCP value %d = 0x%08x\n", i, mcp_data[i]);
+            d2mcp_data[i] = bnet_packet_read_dword(pkt);
         }
         bncs_unique_username = bnet_packet_read_cstring(pkt);
         
-        mcp_addr.sin_addr.s_addr = mcp_ip;
-        mcp_addr.sin_port = htons(mcp_port);
+        d2mcp_addr.sin_addr.s_addr = d2mcp_ip;
+        d2mcp_addr.sin_port = htons(d2mcp_port);
         
-        purple_debug_info("bnet", "MCP realm logon succeeded. Connect to %s:%d\n", inet_ntoa(mcp_addr.sin_addr), mcp_addr.sin_port);
-        bnet_realm_connect(bnet, mcp_addr, mcp_data, bncs_unique_username);
+        purple_debug_info("bnet", "MCP realm logon succeeded. Connect to %s:%d\n", inet_ntoa(d2mcp_addr.sin_addr), d2mcp_addr.sin_port);
+        bnet_realm_connect(bnet, d2mcp_addr, d2mcp_data, bncs_unique_username);
         
         g_free(bncs_unique_username);
     } else {
-        // TODO throw error
-        purple_debug_warning("bnet", "MCP realm logon failed. 0x%08x\n", mcp_status);
+        gchar *tmp;
+        purple_debug_warning("bnet", "MCP realm logon failed. 0x%08x\n", d2mcp_status);
+        switch (d2mcp_status) {
+            case BNET_REALM_LOGON_UNAVAIL:
+                purple_notify_error(bnet->account->gc, "Realm Logon Error", "The Diablo II realm is unavailable.",
+                        "Unable to log on to the Diablo II realm. Continuing channel log on.");
+                break;
+            case BNET_REALM_LOGON_BADPW:
+                purple_notify_error(bnet->account->gc, "Realm Logon Error", "Diablo II realm password is incorrect.",
+                        "Unable to log on to the Diablo II realm. Continuing channel log on.");
+                break;
+            default:
+                tmp = g_strdup_printf("Diablo II realm logon failed (0x%02x).", d2mcp_status);
+                purple_notify_error(bnet->account->gc, "Realm Logon Error", tmp,
+                        "Unable to log on to the Diablo II realm. Continuing channel log on.");
+                g_free(tmp);
+                break;
+        }
+        bnet_realm_logon_cb(bnet);
     }
 }
 
@@ -3914,10 +4144,11 @@ static void
 bnet_recv_QUERYREALMS2(BnetConnectionData *bnet, BnetPacket *pkt)
 {
     guint32 count;
-    GList *realms = NULL;
     gboolean auto_join = FALSE;
     gchar *d2realm_join;
     int i;
+    GList *realm_list = NULL;
+    gboolean listing = FALSE;
     
     /* unknown = */bnet_packet_read_dword(pkt);
     count = bnet_packet_read_dword(pkt);
@@ -3926,43 +4157,57 @@ bnet_recv_QUERYREALMS2(BnetConnectionData *bnet, BnetPacket *pkt)
     if (d2realm_join && strlen(d2realm_join) > 0) {
         auto_join = TRUE;
     } else if (count == 0) {
-        // TODO throw error: no realms on this server
-        purple_debug_warning("bnet", "MCP There are no realms on this server!\n");
+        purple_notify_error(bnet->account->gc, "Realm Logon Error", "There are no Diablo II realms on this server.",
+                "Unable to log on to the Diablo II realm. Continuing channel log on.");
+        bnet_realm_logon_cb(bnet);
+        g_free(d2realm_join);
+        return;
     } else if (count == 1) {
         // join first
         auto_join = TRUE;
     } else {
-        // TODO list realms to user
-        // init dialog
-        purple_debug_info("bnet", "MCP There multiple realms on this server!\n");
+        listing = TRUE;
+        purple_debug_info("bnet", "MCP There are multiple realms on this server!\n");
     }
     
     for (i = 0; i < count; i++) {
-        guint32 d2realm_up = bnet_packet_read_dword(pkt);
-        gchar *d2realm_name = bnet_packet_read_cstring(pkt);
-        gchar *d2realm_descr = bnet_packet_read_cstring(pkt);
+        guint32 d2realm_up;
+        gchar *d2realm_name;
+        gchar *d2realm_descr;
         
-        // if we don't know what to autojoin yet,
-        // set it to the first realm
+        d2realm_up = bnet_packet_read_dword(pkt);
+        d2realm_name = bnet_packet_read_cstring(pkt);
+        d2realm_descr = bnet_packet_read_cstring(pkt);
+        
+        if (listing) {
+            BnetD2RealmServer *server = g_new0(BnetD2RealmServer, 1);
+            server->up = d2realm_up;
+            server->name = g_strdup(d2realm_name);
+            server->descr = g_strdup(d2realm_descr);
+            realm_list = g_list_append(realm_list, server);
+        }
+        
         if (auto_join && strlen(d2realm_join) == 0) {
             g_free(d2realm_join);
             d2realm_join = g_strdup(d2realm_name);
         }
         
-        if (strcmp(d2realm_join, d2realm_name) == 0) {
-            bnet->mcp_name = g_strdup(d2realm_join);
-            bnet->mcp_descr = g_strdup(d2realm_descr);
+        if (g_ascii_strcasecmp(d2realm_join, d2realm_name) == 0) {
+            bnet->d2mcp_name = g_strdup(d2realm_join);
+            bnet->d2mcp_descr = g_strdup(d2realm_descr);
         }
         
-        // TODO append to dialog
         g_free(d2realm_name);
         g_free(d2realm_descr);
     }
     
-    if (auto_join) {            
+    if (auto_join) {
         const gchar *d2realm_pass = purple_account_get_string(bnet->account, "d2realm_pass", "password");
         bnet_realm_logon(bnet, bnet->client_cookie, d2realm_join, d2realm_pass);
         auto_join = FALSE;
+    }
+    if (listing) {
+        bnet_realm_server_list(bnet, realm_list);
     }
 }
 
@@ -4317,12 +4562,16 @@ bnet_recv_NEWS_INFO(BnetConnectionData *bnet, BnetPacket *pkt)
 
             purple_debug_info("bnet", "News items: %d\n", bnet->news_count);
         } else {
+            gboolean add_it = TRUE;
             GList *el2 = g_list_first(bnet->news);
             BnetNewsItem *item = g_new0(BnetNewsItem, 1);
                 
             while (el2 != NULL) {
                 if (((BnetNewsItem *)el2->data)->timestamp == timestamp) {
                     purple_debug_warning("bnet", "duplicate in bnet_recv_NEWS_INFO\n");
+                    if (strcmp(((BnetNewsItem *)el2->data)->message, message) == 0) {
+                        add_it = FALSE;
+                    }
                 }
                 el2 = g_list_next(el2);
             }
@@ -4330,10 +4579,14 @@ bnet_recv_NEWS_INFO(BnetConnectionData *bnet, BnetPacket *pkt)
             item->timestamp = timestamp;
             item->message = message;
 
-            bnet->news = g_list_append(bnet->news, item);
-            bnet->news_count++;
-            if (item->timestamp > bnet->news_latest) {
-                bnet->news_latest = item->timestamp;
+            if (add_it) {
+                bnet->news = g_list_append(bnet->news, item);
+                bnet->news_count++;
+                if (item->timestamp > bnet->news_latest) {
+                    bnet->news_latest = item->timestamp;
+                }
+            } else {
+                g_free(item);
             }
         }
     }
@@ -4441,7 +4694,7 @@ bnet_recv_AUTH_CHECK(BnetConnectionData *bnet, BnetPacket *pkt)
             case BNET_AUTH_CHECK_KEYERROR_INUSE:
                 tmp = "CD-key is in use%s.";
                 if (strlen(extra_info) > 0) {
-                    if (strcmp(extra_info, bnet->username) == 0) {
+                    if (g_ascii_strcasecmp(extra_info, bnet->key_owner) == 0) {
                         tmp = "CD-key is in use%s. Battle.net may not have discovered that you disconnected yet. Try again in five minutes.";
                         conn_error = PURPLE_CONNECTION_ERROR_NETWORK_ERROR;
                     }
@@ -4481,10 +4734,10 @@ bnet_recv_AUTH_CHECK(BnetConnectionData *bnet, BnetPacket *pkt)
 static void
 bnet_recv_AUTH_ACCOUNTCREATE(BnetConnectionData *bnet, BnetPacket *pkt)
 {
-    guint32 result = bnet_packet_read_dword(pkt);
-
+    gchar *tmp;
     PurpleConnection *gc = bnet->account->gc;
-
+    guint32 result = bnet_packet_read_dword(pkt);
+    
     switch (result) {
         case BNET_SUCCESS:
             purple_debug_info("bnet", "Account created!\n");
@@ -4494,7 +4747,7 @@ bnet_recv_AUTH_ACCOUNTCREATE(BnetConnectionData *bnet, BnetPacket *pkt)
         case BNET_AUTH_ACCOUNT_EXISTS:
             purple_connection_error_reason(gc,
                     PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
-                    "Account name in use");
+                    "Account name in use.");
             break;
         case BNET_AUTH_ACCOUNT_SHORT:
             purple_connection_error_reason(gc,
@@ -4504,32 +4757,34 @@ bnet_recv_AUTH_ACCOUNTCREATE(BnetConnectionData *bnet, BnetPacket *pkt)
         case BNET_AUTH_ACCOUNT_BADCHAR:
             purple_connection_error_reason(gc,
                     PURPLE_CONNECTION_ERROR_INVALID_USERNAME,
-                    "Account name contains an illigal character");
+                    "Account name contains an illegal character.");
             break;
         case BNET_AUTH_ACCOUNT_BADWORD:
             purple_connection_error_reason(gc,
                     PURPLE_CONNECTION_ERROR_INVALID_USERNAME,
-                    "Account name contains a banned word");
+                    "Account name contains a banned word.");
             break;
         case BNET_AUTH_ACCOUNT_NOTENOUGHALPHA:
             purple_connection_error_reason(gc,
                     PURPLE_CONNECTION_ERROR_INVALID_USERNAME,
-                    "Account name does not contain enough alphanumeric characters");
+                    "Account name does not contain enough alphanumeric characters.");
             break;
         case BNET_AUTH_ACCOUNT_ADJPUNCT:
             purple_connection_error_reason(gc,
                     PURPLE_CONNECTION_ERROR_INVALID_USERNAME,
-                    "Account name contains adjacent punctuation characters");
+                    "Account name contains adjacent punctuation characters.");
             break;
         case BNET_AUTH_ACCOUNT_TOOMANYPUNCT:
             purple_connection_error_reason(gc,
                     PURPLE_CONNECTION_ERROR_INVALID_USERNAME,
-                    "Account name contains too many punctuation characters");
+                    "Account name contains too many punctuation characters.");
             break;
         default:
+            tmp = g_strdup_printf("Account creation failure (0x%02x).", result);
             purple_connection_error_reason(gc,
                     PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
-                    "Account create failure");
+                    tmp);
+            g_free(tmp);
             break;
     }
 
@@ -4543,9 +4798,9 @@ bnet_recv_AUTH_ACCOUNTCREATE(BnetConnectionData *bnet, BnetPacket *pkt)
 static void
 bnet_recv_AUTH_ACCOUNTLOGON(BnetConnectionData *bnet, BnetPacket *pkt)
 {
-    guint32 result = bnet_packet_read_dword(pkt);
-
+    gchar *tmp;
     PurpleConnection *gc = bnet->account->gc;
+    guint32 result = bnet_packet_read_dword(pkt);
     
     bnet_account_lockout_cancel(bnet);
 
@@ -4564,17 +4819,19 @@ bnet_recv_AUTH_ACCOUNTLOGON(BnetConnectionData *bnet, BnetPacket *pkt)
         case BNET_AUTH_ACCOUNT_DNE:
             purple_connection_error_reason(gc,
                     PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
-                    "Account does not exist");
+                    "Account does not exist.");
             break;
         case BNET_AUTH_ACCOUNT_REQUPGRADE:
             purple_connection_error_reason(gc,
                     PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
-                    "Account requires upgrade");
+                    "Account requires upgrade.");
             break;
         default:
+            tmp = g_strdup_printf("Account logon failure (0x%02x).", result);
             purple_connection_error_reason(gc,
                     PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
-                    "Account logon failure");
+                    tmp);
+            g_free(tmp);
             break;
     }
 
@@ -4587,57 +4844,64 @@ bnet_recv_AUTH_ACCOUNTLOGON(BnetConnectionData *bnet, BnetPacket *pkt)
 static void
 bnet_recv_AUTH_ACCOUNTLOGONPROOF(BnetConnectionData *bnet, BnetPacket *pkt)
 {
-    guint32 result = bnet_packet_read_dword(pkt);
-
+    gchar *tmp;
+    gchar *tmp_result;
+    gchar *tmp_error;
     PurpleConnection *gc = bnet->account->gc;
-
+    guint32 result = bnet_packet_read_dword(pkt);
+    gchar *M2 = (gchar *)bnet_packet_read(pkt, SHA1_HASH_SIZE);
+    gchar *additional_info = bnet_packet_read_cstring(pkt);
+    
     switch (result) {
         case BNET_SUCCESS:
-            {
-                gchar *M2 = (gchar *)bnet_packet_read(pkt, SHA1_HASH_SIZE);
-
-                if (srp_check_M2(bnet->account_data, M2) == FALSE) {
-                    purple_debug_warning("bnet", "SRP: Server sent an incorrect M[2] value!\n");
-                } else {
-                    purple_debug_info("bnet", "SRP: Validated M[2] value.\n");
-                }
-
-                g_free(M2);
-
-                purple_debug_info("bnet", "Logged in!\n");
-                purple_connection_update_progress(gc, "Entering chat", BNET_STEP_FINAL, BNET_STEP_COUNT);
-
-                bnet_enter_chat(bnet);
-                break;
+            if (srp_check_M2(bnet->account_data, M2) == FALSE) {
+                purple_notify_error(gc, "SRP Account Verification", "The server may not actually know your password!",
+                        "It sent an invalid M[2] response.");
+            } else {
+                purple_debug_info("bnet", "SRP: Validated M[2] value.\n");
             }
+
+            purple_debug_info("bnet", "Logged in!\n");
+            purple_connection_update_progress(gc, "Entering chat", BNET_STEP_FINAL, BNET_STEP_COUNT);
+
+            bnet_enter_chat(bnet);
+            return;
         case BNET_AUTH_ACCOUNT_BADPW:
-            purple_connection_error_reason(gc,
-                    PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
-                    "Password incorrect");
+            tmp_result = g_strdup("Password incorrect%s.");
             break;
         case BNET_AUTH_ACCOUNT_CLOSED:
-            {
-                char *extra_info = bnet_packet_read_cstring(pkt);
-                purple_connection_error_reason(gc,
-                        PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
-                        "Account closed");
-
-                purple_debug_info("bnet", "ACCOUNT CLOSED: %s\n", extra_info);
-                g_free(extra_info);
-                break;
-            }
+            tmp_result = g_strdup("Account closed%s.");
+            break;
         case BNET_AUTH_ACCOUNT_REQEMAIL:
             bnet_request_set_email(bnet, FALSE);
             purple_debug_info("bnet", "Logged in!\n");
             purple_connection_update_progress(gc, "Entering chat", BNET_STEP_FINAL, BNET_STEP_COUNT);
             bnet_enter_chat(bnet);
-            break;
+            return;
         case BNET_AUTH_ACCOUNT_ERROR:
-            purple_connection_error_reason(gc,
-                    PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
-                    "Account logon failure");
+            tmp_result = g_strdup("Account logon failure%s.");
+            break;
+        default:
+            tmp_result = g_strdup_printf("Account logon failure%%s (0x%02x)", result);
             break;
     }
+    
+    if (additional_info != NULL && strlen(additional_info) > 0) {
+        tmp = g_strdup_printf(tmp_result, " (%s)");
+        tmp_error = g_strdup_printf(tmp, additional_info);
+        g_free(tmp_result);
+        g_free(tmp);
+    } else {
+        tmp_error = tmp_result;
+    }
+    
+    purple_connection_error_reason(gc,
+            PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
+            tmp_error);
+
+    g_free(M2);
+    g_free(additional_info);
+    g_free(tmp_error);
 }
 
 static void
@@ -4649,9 +4913,15 @@ bnet_recv_SETEMAIL(BnetConnectionData *bnet, BnetPacket *pkt)
 static void
 bnet_recv_LOGONRESPONSE2(BnetConnectionData *bnet, BnetPacket *pkt)
 {
-    guint32 result = bnet_packet_read_dword(pkt);
-
+    gchar *tmp;
+    gchar *tmp_result;
+    gchar *tmp_error;
     PurpleConnection *gc = bnet->account->gc;
+    guint32 result = bnet_packet_read_dword(pkt);
+    gchar *additional_info = NULL;
+    if (bnet_packet_can_read(pkt, 1)) {
+        additional_info = bnet_packet_read_cstring(pkt); // can return NULL
+    }
     
     bnet_account_lockout_cancel(bnet);
 
@@ -4661,79 +4931,86 @@ bnet_recv_LOGONRESPONSE2(BnetConnectionData *bnet, BnetPacket *pkt)
             purple_connection_update_progress(gc, "Entering chat", BNET_STEP_FINAL, BNET_STEP_COUNT);
 
             bnet_enter_chat(bnet);
-            break;
+            return;
         case BNET_LOGONRESP2_DNE:
-            purple_connection_error_reason(gc,
-                    PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
-                    "Account does not exist");
+            tmp_result = g_strdup("Account does not exist%s.");
             break;
         case BNET_LOGONRESP2_BADPW:
-            purple_connection_error_reason(gc,
-                    PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
-                    "Password incorrect");
+            tmp_result = g_strdup("Password incorrect%s.");
             break;
         case BNET_LOGONRESP2_CLOSED:
-            {
-                char *extra_info = bnet_packet_read_cstring(pkt);
-                purple_connection_error_reason(gc,
-                        PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
-                        "Account closed");
-
-                purple_debug_info("bnet", "ACCOUNT CLOSED: %s\n", extra_info);
-                g_free(extra_info);
-                break;
-            }
+            tmp_result = g_strdup("Account closed%s.");
+            break;
         default:
-            purple_connection_error_reason(gc,
-                    PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
-                    "Account logon failure");
+            tmp_result = g_strdup_printf("Account logon failure%%s (0x%02x)", result);
             break;
     }
+    
+    if (additional_info != NULL && strlen(additional_info) > 0) {
+        tmp = g_strdup_printf(tmp_result, " (%s)");
+        tmp_error = g_strdup_printf(tmp, additional_info);
+        g_free(tmp_result);
+        g_free(tmp);
+    } else {
+        tmp_error = tmp_result;
+    }
+    
+    purple_connection_error_reason(gc,
+            PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
+            tmp_error);
 
-    //purple_debug_info("bnet", "LOGONRESPONSE2: 0x%08x\n", result);
+    g_free(additional_info);
+    g_free(tmp_error);
 }
 
 static void
 bnet_recv_CREATEACCOUNT2(BnetConnectionData *bnet, BnetPacket *pkt)
 {
-    guint32 result = bnet_packet_read_dword(pkt);
-
+    gchar *tmp;
+    gchar *tmp_result;
+    gchar *tmp_error;
     PurpleConnection *gc = bnet->account->gc;
+    guint32 result = bnet_packet_read_dword(pkt);
+    gchar *suggested_name = bnet_packet_read_cstring(pkt);
 
     switch (result) {
         case BNET_SUCCESS:
             purple_debug_info("bnet", "Account created!\n");
             bnet->account_create = FALSE;
             bnet_close(gc);
-            break;
+            return;
         case BNET_CREATEACC2_BADCHAR:
-            purple_connection_error_reason(gc,
-                    PURPLE_CONNECTION_ERROR_INVALID_USERNAME,
-                    "Account name contains an illigal character");
+            tmp_result = g_strdup("Account name contains an illegal character");
             break;
         case BNET_CREATEACC2_BADWORD:
-            purple_connection_error_reason(gc,
-                    PURPLE_CONNECTION_ERROR_INVALID_USERNAME,
-                    "Account name contains a banned word");
+            tmp_result = g_strdup("Account name contains a banned word");
             break;
         case BNET_CREATEACC2_EXISTS:
-            purple_connection_error_reason(gc,
-                    PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
-                    "Account name in use");
+            tmp_result = g_strdup("Account name in use");
             break;
         case BNET_CREATEACC2_NOTENOUGHALPHA:
-            purple_connection_error_reason(gc,
-                    PURPLE_CONNECTION_ERROR_INVALID_USERNAME,
-                    "Account name does not contain enough alphanumeric characters");
+            tmp_result = g_strdup("Account name does not contain enough alphanumeric characters%s.");
             break;
         default:
-            purple_connection_error_reason(gc,
-                    PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED,
-                    "Account create failure");
+            tmp_result = g_strdup_printf("Account create failure%%s (0x%02x).", result);
             break;
     }
+    
+    if (suggested_name != NULL && strlen(suggested_name) > 0) {
+        tmp = g_strdup_printf(tmp_result, " (suggested name: %s)");
+        tmp_error = g_strdup_printf(tmp, suggested_name);
+        g_free(tmp_result);
+        g_free(tmp);
+    } else {
+        tmp_error = tmp_result;
+    }
+    
+    purple_connection_error_reason(gc,
+            PURPLE_CONNECTION_ERROR_INVALID_USERNAME,
+            tmp_error);
 
-    //purple_debug_info("bnet", "LOGONRESPONSE2: 0x%08x\n", result);
+    g_free(suggested_name);
+    g_free(tmp_error);
 }
 
 static void
@@ -5423,6 +5700,7 @@ bnet_parse_telnet_line_event(BnetConnectionData *bnet, GRegex *regex, const gcha
                 bnet->my_statstring = g_strdup("");
                 bnet->my_accountname = g_strdup(bnet->username);
                 bnet->unique_username = g_strdup(rest);
+                purple_connection_set_display_name(gc, rest);
                 break;
         }
     } else if (id == BNET_TELNET_XID) {
@@ -6274,6 +6552,11 @@ bnet_close(PurpleConnection *gc)
             purple_debug_info("bnet", "free username\n");
             g_free(bnet->username);
             bnet->username = NULL;
+        }
+        if (bnet->key_owner != NULL) {
+            purple_debug_info("bnet", "free key_owner\n");
+            g_free(bnet->key_owner);
+            bnet->key_owner = NULL;
         }
         if (bnet->my_statstring != NULL) {
             purple_debug_info("bnet", "free my_statstring\n");
@@ -7398,15 +7681,15 @@ bnet_news_save(BnetConnectionData *bnet)
     while (el != NULL) {
         BnetNewsItem *item = el->data;
         
-        bnet_packet_insert(pkt, &item->timestamp, BNET_SIZE_DWORD);
-        bnet_packet_insert(pkt, item->message, BNET_SIZE_CSTRING);
+        if (item->timestamp > 0 && item->message != NULL) {
+            bnet_packet_insert(pkt, &item->timestamp, BNET_SIZE_DWORD);
+            bnet_packet_insert(pkt, item->message, BNET_SIZE_CSTRING);
+        }
     
         el = g_list_next(el);
     }
     cache_val = bnet_packet_serialize(pkt);
     bnet_cache_set(bnet, "pkt:SID_NEWS_INFO", bnet->news_latest, cache_key, cache_val);
-    g_free(cache_key);
-    g_free(cache_val);
 }
 
 static void
@@ -7430,7 +7713,7 @@ bnet_news_load(BnetConnectionData *bnet)
         bnet->news = NULL;
     } else {
         pkt = bnet_packet_deserialize(cache_val);
-        if (bnet_packet_can_read(pkt, 1)) {
+        if (pkt != NULL && bnet_packet_can_read(pkt, 1)) {
             bnet->news_count = bnet_packet_read_byte(pkt);
             for (i = 0; i < bnet->news_count; i++) {
                 BnetNewsItem *item = g_new0(BnetNewsItem, 1);
@@ -8788,10 +9071,10 @@ init_plugin(PurplePlugin *plugin)
     option = purple_account_option_bool_new("Show ban messages", "showbans", TRUE);
     prpl_info.protocol_options = g_list_append(prpl_info.protocol_options, option);
 
-    option = purple_account_option_bool_new("Automatic join delay filtering (buggy)", "joindelay", FALSE);
+    option = purple_account_option_string_new("Default friends group", "grpfriends", BNET_DEFAULT_GROUP_FRIENDS);
     prpl_info.protocol_options = g_list_append(prpl_info.protocol_options, option);
 
-    option = purple_account_option_string_new("Default friends group", "grpfriends", BNET_DEFAULT_GROUP_FRIENDS);
+    option = purple_account_option_string_new("Default clan members group", "grpclan", BNET_DEFAULT_GROUP_CLAN);
     prpl_info.protocol_options = g_list_append(prpl_info.protocol_options, option);
 
     option = purple_account_option_bool_new("Show mutual friend status-change messages", "showmutual", FALSE);
@@ -8800,7 +9083,7 @@ init_plugin(PurplePlugin *plugin)
     option = purple_account_option_bool_new("Show clan members on buddy list (buggy)", "showgrpclan", FALSE);
     prpl_info.protocol_options = g_list_append(prpl_info.protocol_options, option);
 
-    option = purple_account_option_string_new("Default clan members group", "grpclan", BNET_DEFAULT_GROUP_CLAN);
+    option = purple_account_option_bool_new("Use Diablo II character (buggy)", "use_d2realm", FALSE);
     prpl_info.protocol_options = g_list_append(prpl_info.protocol_options, option);
 
     for (c = bnet_cmds; c && c->name; c++) {

@@ -71,13 +71,13 @@
 #define PROTOCOL_NAME      "bnet"
 #define PLUGIN_ID          "prpl-ribose-bnet"
 #define PLUGIN_NAME        "Classic Battle.net"
-#define PLUGIN_MAJOR_VER    0
-#define PLUGIN_MINOR_VER    9
+#define PLUGIN_MAJOR_VER    1
+#define PLUGIN_MINOR_VER    0
 #define PLUGIN_MICRO_VER    0
 #define PLUGIN_SHORT_DESCR "Classic Battle.net Protocol Plugin"
 #define PLUGIN_DESCR       "Classic Battle.net Chat Server Protocol. Allows you to connect to classic Battle.net to chat with users on StarCraft, Diablo/II, and WarCraft II/III and their expansions."
 #define PLUGIN_AUTHOR      "Nate Book <nmbook@gmail.com>"
-#define PLUGIN_WEBSITE     "http://www.ribose.me"
+#define PLUGIN_WEBSITE     "http://www.natembook.com"
 #define QUOTE_(x)           #x
 #define QUOTE(x)            QUOTE_(x)
 #define PLUGIN_STR_VER      QUOTE(PLUGIN_MAJOR_VER.PLUGIN_MINOR_VER.PLUGIN_MICRO_VER)
@@ -672,20 +672,6 @@ typedef struct {
     // current BNLS port
     guint16 bnls_port;
     
-    // current D2 realm address/port
-    gchar *mcp_addr;
-    guint16 mcp_port;
-    // data used to start D2 realm connection
-    guint32 mcp_data[16];
-    // realm name
-    gchar *mcp_name;
-    // realm descr
-    gchar *mcp_descr;
-    // currently logged in as this character
-    guint32 mcp_char_exp;
-    gchar *mcp_char;
-    gchar *mcp_char_stats;
-    
     // authentication data:
     gboolean emulate_telnet;
     // the game product to emulate (BNLS style)
@@ -710,6 +696,8 @@ typedef struct {
     srp_t *account_data;
     // for changing password or creating an account, the "new" srp_t
     srp_t *account_change_data;
+    // current key owner
+    gchar *key_owner;
     
     // account data:
     // whether we should create the account if DNE during this logon
@@ -720,6 +708,25 @@ typedef struct {
     char *change_pw_from;
     // what to change password to
     char *change_pw_to;
+    
+    // current D2 realm address/port
+    gchar *d2mcp_addr;
+    guint16 d2mcp_port;
+    // data used to start D2 realm connection
+    guint32 d2mcp_data[16];
+    // realm name
+    gchar *d2mcp_name;
+    // realm descr
+    gchar *d2mcp_descr;
+    // currently logged in as this character
+    guint32 d2mcp_char_exp;
+    gchar *d2mcp_char;
+    gchar *d2mcp_char_stats;
+    gboolean d2mcp_on_char;
+    // character list fields for dialog
+    PurpleRequestFields *realm_character_fields;
+    // server list fields for dialog
+    PurpleRequestFields *realm_server_fields;
     
     // online data:
     // when completely connected (in a channel), this is set to TRUE
@@ -848,6 +855,20 @@ typedef struct {
     gchar *inviter;
     gchar *clan_name;
 } BnetClanInvitationCallbackData;
+
+typedef struct {
+    guint32 up;
+    gchar *name;
+    gchar *descr;
+    BnetConnectionData *bnet;
+} BnetD2RealmServer;
+
+typedef struct {
+    guint32 expires;
+    gchar *name;
+    gchar *stats;
+    BnetConnectionData *bnet;
+} BnetD2RealmCharacter;
 
 
 typedef enum {
@@ -1157,10 +1178,13 @@ static void bnet_account_register(PurpleAccount *account);
 static void bnet_account_chpw(PurpleConnection *gc, const char *oldpass, const char *newpass);
 static void bnet_account_logon(BnetConnectionData *bnet);
 static void bnet_enter_channel(const BnetConnectionData *bnet);
+static void bnet_realm_logon_cb(BnetConnectionData *bnet);
 static void bnet_enter_chat(BnetConnectionData *bnet);
 static int  bnet_realm_logon(const BnetConnectionData *bnet, const guint32 client_cookie,
             const gchar *realm_name, const gchar *realm_pass);
 static void bnet_entered_chat(BnetConnectionData *bnet);
+static void bnet_realm_character_list(BnetConnectionData *bnet, GList *char_list);
+static void bnet_realm_server_list(BnetConnectionData *bnet, GList *server_list);
 static gboolean bnet_keepalive_timer(BnetConnectionData *bnet);
 static void bnet_account_lockout_set(BnetConnectionData *bnet);
 static void bnet_account_lockout_cancel(BnetConnectionData *bnet);

@@ -51,7 +51,7 @@
 #define BNET_PACKET_BNCS  4
 #define BNET_PACKET_BNLS  3
 #define BNET_PACKET_D2MCP 3
-#define BNET_PACKET_RAW   2
+#define BNET_PACKET_RAW   0
 
 typedef struct {
     gchar *data;
