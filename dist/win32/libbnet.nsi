@@ -10,7 +10,7 @@
 
   ;Name and file
   Name "Battle.net Protocol for Pidgin"
-  OutFile "pidgin-libbnet-1.0.0.exe"
+  OutFile "out\pidgin-libbnet-1.0.0.exe"
 
   ;Default installation folder
   InstallDir "$PROGRAMFILES\Pidgin"
@@ -26,11 +26,11 @@
 ;--------------------------------
 ;Interface Settings
 
-  !define MUI_ICON bnet.ico
+  !define MUI_ICON res\bnet.ico
   
   !define MUI_HEADERIMAGE
-  !define MUI_HEADERIMAGE_BITMAP bnet-header.bmp
-  !define MUI_WELCOMEFINISHPAGE_BITMAP bnet-left.bmp
+  !define MUI_HEADERIMAGE_BITMAP res\header.bmp
+  !define MUI_WELCOMEFINISHPAGE_BITMAP res\left.bmp
   
   !define MUI_FINISHPAGE_NOAUTOCLOSE
   !define MUI_UNFINISHPAGE_NOAUTOCLOSE
@@ -51,7 +51,7 @@
 ;Pages
 
   !insertmacro MUI_PAGE_WELCOME
-  !insertmacro MUI_PAGE_LICENSE "LICENSE"
+  !insertmacro MUI_PAGE_LICENSE res\LICENSE
   !insertmacro MUI_PAGE_DIRECTORY
   !insertmacro MUI_PAGE_INSTFILES
   !insertmacro MUI_PAGE_FINISH
@@ -87,16 +87,18 @@ Section "-libbnet" SecLibbnet
 
   CheckPidginOpen:
     Delete "plugins\libbnet.dll"
+    Delete "libgmp-3.dll"
+    Delete "libgmp-10.dll"
     
     IfErrors PidginOpen
       Goto CreateAndContinue
   
   PidginOpen:
   
-    MessageBox MB_RETRYCANCEL "The installer cannot save the plugin because Pidgin is currently open. Close Pidgin and press Retry." IDRETRY CheckPidginOpen IDCANCEL AbortCurrentlyOpen
+    MessageBox MB_RETRYCANCEL "The installer cannot update the plugin because Pidgin is currently open. Close Pidgin and press Retry." IDRETRY CheckPidginOpen IDCANCEL AbortCurrentlyOpen
     
     AbortCurrentlyOpen:
-      DetailPrint "The installer cannot save the plugin because Pidgin is currently open."
+      DetailPrint "The installer cannot update the plugin because Pidgin is currently open."
       DetailPrint "You cancelled the operation."
       DetailPrint "The installer has stopped."
       Abort
@@ -104,18 +106,18 @@ Section "-libbnet" SecLibbnet
   CreateAndContinue:
   
   ;Store installation folder
-  WriteRegStr HKCU "Software\pidgin\libbnet" "" $INSTDIR
+  WriteRegStr HKCU "    Software\pidgin\libbnet" "" $INSTDIR
   
   ;save libbnet.dll
-  File "/oname=plugins\libbnet.dll" libbnet.dll
+  File "/oname=plugins\libbnet.dll" in\plugins\libbnet.dll
   
   ;save libgmp-3.dll
-  File "/oname=libgmp-3.dll" libgmp-3.dll
+  File "/oname=libgmp-3.dll" in\libgmp-3.dll
   
   ;save pixmaps
-  File "/oname=pixmaps\pidgin\protocols\16\bnet.png" bnet-16.png
-  File "/oname=pixmaps\pidgin\protocols\22\bnet.png" bnet-22.png
-  File "/oname=pixmaps\pidgin\protocols\48\bnet.png" bnet-48.png
+  File "/oname=pixmaps\pidgin\protocols\16\bnet.png" in\pixmaps\pidgin\protocols\16\bnet.png
+  File "/oname=pixmaps\pidgin\protocols\22\bnet.png" in\pixmaps\pidgin\protocols\22\bnet.png
+  File "/oname=pixmaps\pidgin\protocols\48\bnet.png" in\pixmaps\pidgin\protocols\48\bnet.png
   
   ;CreateDirectory "libbnet"
   ;Create uninstaller

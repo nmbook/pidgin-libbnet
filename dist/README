@@ -1,0 +1,11 @@
+Distribution folder.
+
+Subfolders:
+* src: Source tars.
+* pixmaps: Things that go in /usr/share/pixmaps on install.
+* win32: The windows NSI installer folder.
+* win32/in: Things that go in %PROGRAMFILES%\Pidgin on NSI install.
+* win32/out: Compiled Windows installers.
+* win32/res: Resources for the NSI installer.
+* res: Miscellaneous resources. Mostly original-sized images.
+
