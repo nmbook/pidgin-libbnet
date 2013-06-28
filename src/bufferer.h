@@ -33,6 +33,7 @@
 #include "internal.h"
 #endif
 #include "debug.h"
+#include "util.h"
 
 // sizes
 #define BNET_SIZE_FILETIME 8
