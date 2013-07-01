@@ -92,7 +92,7 @@ bnet_packet_deserialize(const gchar *str)
     
     ret = purple_base64_decode(str, &ret_len);
     
-    purple_debug_misc("bnet", "DESERIALIZE: length %d\n", ret_len);
+    purple_debug_misc("bnet", "DESERIALIZE: length %d\n", (int)ret_len);
     
     if (ret == NULL) {
         return NULL;
@@ -167,29 +167,40 @@ bnet_packet_read_cstring(BnetPacket *bnet_packet)
 guint64
 bnet_packet_read_qword(BnetPacket *bnet_packet)
 {
-    void *ret = bnet_packet_read(bnet_packet, BNET_SIZE_FILETIME);
+    guint64 i;
+    void *ret;
+    
+    ret = bnet_packet_read(bnet_packet, BNET_SIZE_FILETIME);
     if (ret == NULL) return 0;
-    guint64 i = *((guint64 *)ret);
+    i = *((guint64 *)ret);
     g_free(ret);
+
     return i;
 }
 
 guint32
 bnet_packet_read_dword(BnetPacket *bnet_packet)
 {
-    void *ret = bnet_packet_read(bnet_packet, BNET_SIZE_DWORD);
+    guint32 i;
+    void *ret;
+
+    ret = bnet_packet_read(bnet_packet, BNET_SIZE_DWORD);
     if (ret == NULL) return 0;
-    guint32 i = *((guint32 *)ret);
+    i = *((guint32 *)ret);
     g_free(ret);
+    
     return i;
 }
 
 guint16
 bnet_packet_read_word(BnetPacket *bnet_packet)
 {
-    void *ret = bnet_packet_read(bnet_packet, BNET_SIZE_WORD);
+    guint16 i;
+    void *ret;
+
+    ret = bnet_packet_read(bnet_packet, BNET_SIZE_WORD);
     if (ret == NULL) return 0;
-    guint16 i = *((guint16 *)ret);
+    i = *((guint16 *)ret);
     g_free(ret);
     return i;
 }
@@ -197,10 +208,14 @@ bnet_packet_read_word(BnetPacket *bnet_packet)
 guint8
 bnet_packet_read_byte(BnetPacket *bnet_packet)
 {
-    void *ret = bnet_packet_read(bnet_packet, BNET_SIZE_BYTE);
+    guint8 i;
+    void *ret;
+
+    ret = bnet_packet_read(bnet_packet, BNET_SIZE_BYTE);
     if (ret == NULL) return 0;
-    guint8 i = *((guint8 *)ret);
+    i = *((guint8 *)ret);
     g_free(ret);
+
     return i;
 }
 

@@ -64,7 +64,6 @@
 #include "keydecode.h"
 #include "sha1.h"
 #include "srp.h"
-#include "w3clan.h"
 #include "userdata.h"
 
 // prpl data
@@ -195,6 +194,9 @@ typedef enum {
 #define BNET_PLATFORM_PMAC 'PMAC'
 #define BNET_PLATFORM_XMAC 'XMAC'
 
+// language
+#define BNET_PRODLANG_ENUS 'enUS'
+
 // udp
 //'bnet'
 #define BNET_UDP_SIG 'bnet'
@@ -213,8 +215,12 @@ typedef enum {
 #define BNET_PRODUCT_SSHR 'SSHR'
 #define BNET_PRODUCT_CHAT 'CHAT'
 
+/* This is the DWORD-string tag type, as a 32-bit unsigned integer
+ * Use bnet_tag_to_string and bnet_string_to_tag to convert between a string version */
+typedef guint32 BnetDwordTag;
+
 // this type specifies values that can come from BNET_PRODUCT_*
-typedef guint32 BnetProductID;
+typedef BnetDwordTag BnetProductID;
 
 // versioning system to use
 typedef gint32 BnetVersioningSystem;
@@ -470,6 +476,49 @@ typedef struct {
 } BnetQueueElement;
 */
 
+#define BNET_USER_TYPE_CLANMEMBER 0x04
+
+typedef enum {
+    BNET_CLAN_RANK_INITIATE  = 0,
+    BNET_CLAN_RANK_PEON      = 1,
+    BNET_CLAN_RANK_GRUNT     = 2,
+    BNET_CLAN_RANK_SHAMAN    = 3,
+    BNET_CLAN_RANK_CHIEFTAIN = 4,
+} BnetClanMemberRank;
+
+typedef enum {
+    BNET_CLAN_STATUS_OFFLINE = 0,
+    BNET_CLAN_STATUS_ONLINE  = 1,
+} BnetClanMemberStatus;
+
+typedef struct {
+    // type = 
+    guint32 type;
+    gchar *name;
+    BnetClanMemberRank rank;
+    BnetClanMemberStatus status;
+    gchar *location;
+
+    guint64 join_date;
+} BnetClanMember;
+
+typedef BnetDwordTag BnetClanTag;
+
+typedef guint8 BnetClanResponseCode;
+#define BNET_CLAN_RESPONSE_SUCCESS          0x00
+#define BNET_CLAN_RESPONSE_NAMEINUSE        0x01
+#define BNET_CLAN_RESPONSE_TOOSOON          0x02
+#define BNET_CLAN_RESPONSE_NOTENOUGHMEMBERS 0x03
+#define BNET_CLAN_RESPONSE_DECLINE          0x04
+#define BNET_CLAN_RESPONSE_UNAVAILABLE      0x05
+#define BNET_CLAN_RESPONSE_ACCEPT           0x06
+#define BNET_CLAN_RESPONSE_NOTAUTHORIZED    0x07
+#define BNET_CLAN_RESPONSE_NOTALLOWED       0x08
+#define BNET_CLAN_RESPONSE_FULL             0x09
+#define BNET_CLAN_RESPONSE_BADTAG           0x0a
+#define BNET_CLAN_RESPONSE_BADNAME          0x0b
+#define BNET_CLAN_RESPONSE_USERNOTFOUND     0x0c
+
 typedef enum {
     BNET_REALM_SUCCESS           = 0x00,
     
@@ -573,34 +622,37 @@ typedef enum {
 typedef guint32 BnetW3RecordType;
 
 typedef enum {
-    // the user closed the lookup dialog: don't notify anymore
-    BNET_LOOKUP_INFO_AWAIT_CANCELLED           = 0x0001,
     // not waiting for anything
-    BNET_LOOKUP_INFO_AWAIT_NONE                = 0x0000,
+    BNET_LOOKUP_INFO_NONE                      = 0x00000000,
+    // the user closed the lookup dialog: don't notify anymore
+    BNET_LOOKUP_INFO_CANCELLED                 = 0x00000001,
     // waiting for channel list (NOT USED -- this is already stored)
-    //BNET_LOOKUP_INFO_AWAIT_CHANNEL_LIST        = 0x0010,
+    //BNET_LOOKUP_INFO_AWAIT_CHANNEL_LIST        = 0x00000010,
     // waiting for friends list (NOT USED -- this is already stored)
-    //BNET_LOOKUP_INFO_AWAIT_FRIENDS_LIST        = 0x0020,
+    //BNET_LOOKUP_INFO_AWAIT_FRIENDS_LIST        = 0x00000020,
     // waiting for WarCraft III clan list (NOT USED -- this is already stored)
-    //BNET_LOOKUP_INFO_AWAIT_W3_CLAN_LIST        = 0x0040,
+    //BNET_LOOKUP_INFO_AWAIT_W3_CLAN_LIST        = 0x00000040,
     // waiting for possible /whois statuses responses (away and dnd)
-    BNET_LOOKUP_INFO_AWAIT_WHOIS_STATUSES_AWAY = 0x0100,
-    BNET_LOOKUP_INFO_AWAIT_WHOIS_STATUSES_DND  = 0x0200,
+    BNET_LOOKUP_INFO_AWAIT_WHOIS_STATUSES_AWAY = 0x00000100,
+    BNET_LOOKUP_INFO_AWAIT_WHOIS_STATUSES_DND  = 0x00000200,
     // both of the above
-    BNET_LOOKUP_INFO_AWAIT_WHOIS_STATUSES      = 0x0300,
+    BNET_LOOKUP_INFO_AWAIT_WHOIS_STATUSES      = 0x00000300,
     // waiting for /whois request (returns EID_INFO)
-    BNET_LOOKUP_INFO_AWAIT_WHOIS               = 0x0400,
+    BNET_LOOKUP_INFO_AWAIT_WHOIS               = 0x00000400,
     // waiting for SID_READUSERDATA request
-    BNET_LOOKUP_INFO_AWAIT_USER_DATA           = 0x0800,
+    BNET_LOOKUP_INFO_AWAIT_USER_DATA           = 0x00000800,
     // waiting for SID_W3PROFILE request
-    BNET_LOOKUP_INFO_AWAIT_W3_USER_PROFILE     = 0x1000,
+    BNET_LOOKUP_INFO_AWAIT_W3_USER_PROFILE     = 0x00001000,
     // waiting for SID_WARCRAFTGENERAL.WID_USERRECORD request
-    BNET_LOOKUP_INFO_AWAIT_W3_USER_STATS       = 0x2000,
+    BNET_LOOKUP_INFO_AWAIT_W3_USER_STATS       = 0x00002000,
     // waiting for SID_WARCRAFTGENERAL.WID_CLANRECORD request
-    BNET_LOOKUP_INFO_AWAIT_W3_CLAN_STATS       = 0x4000,
+    BNET_LOOKUP_INFO_AWAIT_W3_CLAN_STATS       = 0x00004000,
     // waiting for SID_CLANMEMBERINFO request
-    BNET_LOOKUP_INFO_AWAIT_W3_CLAN_MI          = 0x8000,
-} BnetLookupInfoAwait;
+    BNET_LOOKUP_INFO_AWAIT_W3_CLAN_MI          = 0x00008000,
+    BNET_LOOKUP_INFO_FIRST_SECTION             = 0x00010000,
+    BNET_LOOKUP_INFO_FOUND_LOCPROD             = 0x00100000,
+    BNET_LOOKUP_INFO_FOUND_W3_CLAN             = 0x00200000,
+} BnetLookupInfoFlags;
 
 typedef struct {
     guint32 timestamp;
@@ -612,6 +664,11 @@ typedef struct {
     gchar *subname;
     gchar *message;
 } BnetMotdItem;
+
+struct BnetPacketCookieKey {
+    guint8 packet_id;
+    guint32 cookie;
+};
 
 // these are used in the "Get News Info" dialog to classify BnetNewsItems.
 // motd sent by the BNCS in response to SID_NEWS_INFO, with timestamp 0 (name = gateway)
@@ -632,219 +689,166 @@ typedef struct {
 struct SocketData {
     // file descriptor
     int fd;
-    // inbound buffer length
-    guint16 inbuflen;
-    // inbound buffer used
-    guint16 inbufused;
+    // input watcher
+    int prpl_input_watcher;
     // inbound buffer
 	gchar *inbuf;
-    // input watcher
-    int inpa;
+    // inbound buffer length
+    guint16 inbuf_length;
+    // inbound buffer used
+    guint16 inbuf_used;
     // the connection data for this connect
-    PurpleProxyConnectData *conn_data;
+    PurpleProxyConnectData *prpl_conn_data;
+    // the server address (host name)
+    gchar *server;
+    // the server port
+    guint16 port;
 };
 
 // this struct stores extra info for a battle.net connection
 typedef struct {
-    // = 'bnet'
     int magic;
-    
-    // assocated PurpleAccount
+    /* The libpurple account */
     PurpleAccount *account;
-    
-    // socket data:
-    // BNET
-    struct SocketData sbncs;
-    // BNLS
-    struct SocketData sbnls;
-    // D2 realm
-    struct SocketData sd2mcp;
-    
-    // current connection info:
-    // current username
-    gchar *username;
-    // current server
-    gchar *server;
-    // current port
-    guint16 port;
-    // current BNLS server
-    gchar *bnls_server;
-    // current BNLS port
-    guint16 bnls_port;
-    
-    // authentication data:
-    gboolean emulate_telnet;
-    // the game product to emulate (BNLS style)
-    BnetGameType game;
-    // the game product ID (BNET style)
-    BnetProductID product_id;
-    // the version code (verbyte)
-    guint32 version_code;
-    // the client cookie (client token)
-    guint32 client_cookie;
-    // the server cookie (server token)
-    guint32 server_cookie;
-    // the session cookie (sometimes known as UDP value)
-    guint32 session_cookie;
-    // versioning system
-    BnetVersioningSystem versioning_system;
-    // logon type
-    BnetLogonSystem logon_system;
-    // whether we have completed version checking yet
-    gboolean versioning_complete;
-    // for logging in
-    srp_t *account_data;
-    // for changing password or creating an account, the "new" srp_t
-    srp_t *account_change_data;
-    // current key owner
-    gchar *key_owner;
-    
-    // account data:
-    // whether we should create the account if DNE during this logon
-    gboolean account_create; 
-    // whether we should change passwords during this logon
-    gboolean change_pw;
-    // what to change password from
-    char *change_pw_from;
-    // what to change password to
-    char *change_pw_to;
-    
-    // current D2 realm address/port
-    gchar *d2mcp_addr;
-    guint16 d2mcp_port;
-    // data used to start D2 realm connection
-    guint32 d2mcp_data[16];
-    // realm name
-    gchar *d2mcp_name;
-    // realm descr
-    gchar *d2mcp_descr;
-    // currently logged in as this character
-    guint32 d2mcp_char_exp;
-    gchar *d2mcp_char;
-    gchar *d2mcp_char_stats;
-    gboolean d2mcp_on_char;
-    // character list fields for dialog
-    PurpleRequestFields *realm_character_fields;
-    // server list fields for dialog
-    PurpleRequestFields *realm_server_fields;
-    
-    // online data:
-    // when completely connected (in a channel), this is set to TRUE
-    gboolean is_online;
-    // contains "*" or "" depending on whether we are on D2
-    gchar *d2_star;
-    // send first-join
-    gboolean sent_enter_channel;
-    // account name after enter chat
-    gchar *my_accountname;
-    // statstring after enter chat
-    gchar *my_statstring;
-    // the unique username Battle.net assigned
-    gchar *unique_username;
-    // handle for account lockout checking timer
-    guint alo_handle;
-    // a counter, increases every 30 seconds that is_online is true
-    // used for "keep alive"-like functions
-    guint32 ka_tick;
-    // handle for keep alive timer
-    guint ka_handle;
-    
-    // welcome messages, stored for later
-    //GList *welcome_msgs;
-    // message of the days for various things
-    BnetMotdItem motds[BNET_MOTD_TYPES];
-    // email fields for dialog
-    PurpleRequestFields *set_email_fields;
-    
-    // number of news messages
-    guint32 news_count;
-    // timestamp of latest news item
-    guint32 news_latest;
-    // news messages
-    GList *news;
-    
-    // roomlist data:
-    // a GList<char *> - a copy of the roomlist
-    GList *channel_list;
-    // libpurple Roomlist
-    PurpleRoomlist *room_list;
-    
-    // channel data:
-    // when this channel is the "first join" channel and should not be told to libpurple
-    gboolean channel_first_join;
-    // we are waiting for "ourself" in the current channel, to pass the whole list to libpurple
-    gboolean channel_seen_self;
-    // join attempting
-    gchar *joining_channel;
-    // hash of current channel name
-    int channel_id;
-    // current channel name
-    char *channel_name;
-    // current channel flags
-    BnetChatEventFlags channel_flags;
-    // current channel members
-    GList *channel_users;
-    
-    // lookup_info data:
-    // the username of the user we are currently looking up
-    gchar *lookup_info_user;
-    // libpurple's data for the current look-up
-    PurpleNotifyUserInfo *lookup_info;
-    // flags keeping track of what things we are awaiting from Battle.net
-    BnetLookupInfoAwait lookup_info_await;
-    // whether the first section has been added yet (so that it doesn't start with a line break)
-    gboolean lookup_info_first_section;
-    // whether we got location/product information yet (so it is not duplicated)
-    gboolean lookup_info_got_locprod;
-    // whether we found this user's clan
-    gboolean lookup_info_found_clan;
-    // the clan tag (so it is not duplicated, and so that we can make further clan-based requests)
-    BnetClanTag lookup_info_clan;
-    
-    // a GList<BnetUserDataRequest> - each userdata request
-    GList *userdata_requests;
-    
-    // whether we are requesting profile data to write to your profile
-    gboolean writing_profile;
-    // fields in write dialog
-    PurpleRequestFields *profile_write_fields;
-    
-    // whisper data:
-    // last user we sent a message to
-    gchar *last_sent_to;
-    gboolean awaiting_whisper_confirm;
 
-    // friend data:
-    // a GList<BnetFriendInfo> - our current Battle.net friends list
-    GList *friends_list;
-    
-    // W3 clan data:
-    BnetClanInfo *clan_info;
-    // W3 clan set motd fields in dialog
-    PurpleRequestFields *set_motd_fields;
-    // if clan members are in the prpl buddy list, so we know whether we can free them
-    gboolean clan_members_in_blist;
-    // used to preserve the in-channel display of the clan motd.
-    gboolean got_channel_motd;
-    
-    // status data:
-    // away: are we currently away?
-    gboolean is_away;
-    // what message?
-    gchar *away_msg;
-    // are we trying to change our status?
-    gboolean setting_away_status;
-    // dnd: are we currently dnd?
-    gboolean is_dnd;
-    // what message?
-    gchar *dnd_msg;
-    // are we trying to change our dnd state?
-    gboolean setting_dnd_status;
-    
-    PurpleConversation *last_command_conv;
-    
-    // priority queue
-    //BnetQueue *mqueue;
+    /* BNCS (Battle.net Chat Server) state */
+    struct {
+        /* Generic connection data */
+        struct SocketData conn;
+
+        /* Versioning/product state */
+        struct {
+            BnetVersioningSystem type;
+            gboolean complete;
+            BnetProductID product;
+            guint32 version_code;
+            BnetGameType game_type;
+            gchar *key_owner;
+        } versioning;
+        
+        /* Account logon state */
+        struct {
+            BnetLogonSystem type;
+            gboolean create_account;
+            guint32 client_cookie;
+            guint32 server_cookie;
+            guint32 session_cookie;
+            gchar *username;
+            srp_t *auth_ctx;
+            srp_t *auth_ctx_pending;
+            guint lockout_timer_handle;
+            PurpleRequestFields *prpl_setemail_fields_handle;
+        } logon;
+        
+        /* Chat environment state */
+        struct {
+            gboolean is_online;
+            gboolean sent_enter_channel;
+            gboolean first_join;
+            gchar *unique_name;
+            gchar *stats;
+            const gchar *d2_star;
+            guint keepalive_timer_tick;
+            guint keepalive_timer_handle;
+            //BnetQueeu *queue
+            GList *channel_list;
+            PurpleRoomlist *prpl_room_list_handle;
+            PurpleConversation *prpl_last_cmd_conv_handle;
+            GHashTable *packet_cookie_table;
+        } chat_env;
+
+        /* MOTDs */
+        BnetMotdItem motds[BNET_MOTD_TYPES];
+
+        /* Battle.net news */
+        struct {
+            guint32 latest;
+            guint32 item_count;
+            GList *item_list;
+        } news;
+
+        /* Current channel state */
+        struct {
+            gboolean seen_self;
+            gboolean got_motd;
+            gchar *name_pending;
+            gchar *name;
+            BnetChatEventFlags flags;
+            GList *user_list;
+            int prpl_chat_id;
+        } channel;
+
+        /* Whisper state */
+        struct {
+            gchar *last_sent_to;
+            gboolean awaiting_confirm;
+        } whisper;
+
+        /* Friends list state */
+        struct {
+            GList *list;
+        } friends;
+
+        /* My status state */
+        struct {
+            BnetFriendStatus status;
+            BnetFriendStatus status_pending;
+            gchar *away_msg;
+            gchar *dnd_msg;
+        } status;
+
+        /* User lookup ("Get User Info") state */
+        struct {
+            gchar *name;
+            BnetLookupInfoFlags flags;
+            BnetClanTag w3_tag;
+            PurpleNotifyUserInfo *prpl_notify_handle;
+        } lookup_info;
+
+        /* SID_GETUSERDATA state */
+        struct {
+            gboolean writing_profile;
+            GList *requests;
+            PurpleRequestFields *prpl_profile_fields_handle;
+        } user_data;
+        
+        /* Warcraft III clan state */
+        struct {
+            gboolean in_clan;
+            gboolean clan_members_in_blist;
+            BnetClanTag my_clantag;
+            gchar *my_clanname;
+            GList *my_clanmembers;
+            BnetClanMemberRank my_rank;
+            PurpleRequestFields *prpl_setmotd_fields_handle;
+        } w3_clan;
+    } bncs;
+
+    /* BNLS (Battle.net Logon Server) state */
+    struct {
+        /* Generic connection data */
+        struct SocketData conn;
+    } bnls;
+
+    /* D2MCP (Battle.net D2 Character Realm/Master Control Protocol) state */
+    struct {
+        struct SocketData conn;
+        struct {
+            gchar *name;
+            gchar *descr;
+            PurpleRequestFields *prpl_realmlist_fields_handle;
+        } realm;
+        struct {
+            guint32 data[16];
+        } logon;
+        struct {
+            gchar *name;
+            gchar *stats;
+            guint32 expires;
+            gboolean on_character;
+            PurpleRequestFields *prpl_charlist_fields_handle;
+        } character;
+    } d2mcp;
 } BnetConnectionData;
 
 typedef struct {
