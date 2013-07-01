@@ -598,6 +598,18 @@ typedef enum {
     BNET_D2MCP_CHARLIST2 = 0x19,
 } BnetD2RealmPacketID;
 
+typedef struct {
+    guint32 up;
+    gchar *name;
+    gchar *descr;
+} BnetD2RealmServer;
+
+typedef struct {
+    guint32 expires;
+    gchar *name;
+    gchar *stats;
+} BnetD2RealmCharacter;
+
 typedef enum {
     BNET_WID_USERRECORD = 0x04,
     BNET_WID_CLANRECORD = 0x08,
@@ -649,8 +661,13 @@ typedef enum {
     BNET_LOOKUP_INFO_AWAIT_W3_CLAN_STATS       = 0x00004000,
     // waiting for SID_CLANMEMBERINFO request
     BNET_LOOKUP_INFO_AWAIT_W3_CLAN_MI          = 0x00008000,
+    // matches all BNET_LOOKUP_INFO_AWAIT_* flags
+    BNET_LOOKUP_INFO_AWAIT_MASK                = 0x0000fff0,
+    // 1=we have not shown the first section, 0=it has been shown, put a line break
     BNET_LOOKUP_INFO_FIRST_SECTION             = 0x00010000,
+    // whether we have found a suitable location/product pair from the channel, friends, or clan list
     BNET_LOOKUP_INFO_FOUND_LOCPROD             = 0x00100000,
+    // whether we have found a suitable clan tag (or proof they aren't in a clan) from the channel, friends, or clan list
     BNET_LOOKUP_INFO_FOUND_W3_CLAN             = 0x00200000,
 } BnetLookupInfoFlags;
 
@@ -748,8 +765,8 @@ typedef struct {
             gchar *unique_name;
             gchar *stats;
             const gchar *d2_star;
-            guint keepalive_timer_tick;
-            guint keepalive_timer_handle;
+            guint updatelist_timer_tick;
+            guint updatelist_timer_handle;
             //BnetQueeu *queue
             GList *channel_list;
             PurpleRoomlist *prpl_room_list_handle;
@@ -832,22 +849,25 @@ typedef struct {
 
     /* D2MCP (Battle.net D2 Character Realm/Master Control Protocol) state */
     struct {
+        /* Generic connection data */
         struct SocketData conn;
-        struct {
-            gchar *name;
-            gchar *descr;
-            PurpleRequestFields *prpl_realmlist_fields_handle;
-        } realm;
-        struct {
-            guint32 data[16];
-        } logon;
-        struct {
-            gchar *name;
-            gchar *stats;
-            guint32 expires;
-            gboolean on_character;
-            PurpleRequestFields *prpl_charlist_fields_handle;
-        } character;
+        
+        /* Data to log on to realm server */
+        guint32 logon_data[16];
+
+        /* Currently connected realm */
+        BnetD2RealmServer realm;
+
+        /* Currently logged on character */
+        BnetD2RealmCharacter character;
+
+        /* Whether we are logged on to a character */
+        gboolean on_character;
+
+        /* Handle for D2 realm list */
+        PurpleRequestFields *prpl_realmlist_fields_handle;
+        /* Handle for D2 character list */
+        PurpleRequestFields *prpl_charlist_fields_handle;
     } d2mcp;
 } BnetConnectionData;
 
@@ -859,20 +879,6 @@ typedef struct {
     gchar *inviter;
     gchar *clan_name;
 } BnetClanInvitationCallbackData;
-
-typedef struct {
-    guint32 up;
-    gchar *name;
-    gchar *descr;
-    BnetConnectionData *bnet;
-} BnetD2RealmServer;
-
-typedef struct {
-    guint32 expires;
-    gchar *name;
-    gchar *stats;
-    BnetConnectionData *bnet;
-} BnetD2RealmCharacter;
 
 
 typedef enum {
@@ -1189,7 +1195,7 @@ static int  bnet_realm_logon(const BnetConnectionData *bnet, const guint32 clien
 static void bnet_entered_chat(BnetConnectionData *bnet);
 static void bnet_realm_character_list(BnetConnectionData *bnet, GList *char_list);
 static void bnet_realm_server_list(BnetConnectionData *bnet, GList *server_list);
-static gboolean bnet_keepalive_timer(BnetConnectionData *bnet);
+static gboolean bnet_updatelist_timer(BnetConnectionData *bnet);
 static void bnet_account_lockout_set(BnetConnectionData *bnet);
 static void bnet_account_lockout_cancel(BnetConnectionData *bnet);
 static gboolean bnet_account_lockout_timer(BnetConnectionData *bnet);
