@@ -106,7 +106,7 @@
 // status types
 #define BNET_STATUS_ONLINE  "Online"
 #define BNET_STATUS_AWAY    "Away"
-#define BNET_STATUS_DND     "Do Not Disturb"
+#define BNET_STATUS_DND     "Do not disturb"
 #define BNET_STATUS_OFFLINE "Offline"
 
 // buffer size
@@ -793,6 +793,7 @@ typedef struct {
             BnetChatEventFlags flags;
             GList *user_list;
             int prpl_chat_id;
+            guint join_timer_handle;
         } channel;
 
         /* Whisper state */
@@ -1212,8 +1213,8 @@ static char *bnet_format_filetime_string(char *ftime_str);
 static char *bnet_format_filetime(guint64 filetime);
 static guint64 bnet_get_filetime(time_t time);
 static char *bnet_format_strsec(char *secs_str);
-static char *bnet_locale_to_utf8(const char *input);
-static char *bnet_locale_from_utf8(const char *input);
+static char *bnet_to_utf8_crlf(const char *input);
+static char *bnet_utf8_to_iso88951(const char *input);
 static gchar *bnet_escape_text(const gchar *text, int length, gboolean replace_linebreaks);
 static void bnet_find_detached_buddies(BnetConnectionData *bnet);
 static void bnet_do_whois(const BnetConnectionData *bnet, const char *who);
@@ -1271,6 +1272,8 @@ static void bnet_set_away(BnetConnectionData *bnet, gboolean new_state, const gc
 static void bnet_set_dnd(BnetConnectionData *bnet, gboolean new_state, const gchar *message);
 static const char *bnet_normalize(const PurpleAccount *account, const char *in);
 static const char *bnet_d2_normalize(const PurpleAccount *account, const char *in);
+static const char *bnet_d2_get_character(const PurpleAccount *account, const char *in);
+static const char *bnet_d2_get_realm(const PurpleAccount *account, const char *in);
 static const char *bnet_account_normalize(const PurpleAccount *account, const char *in);
 static const char *bnet_gateway_normalize(const PurpleAccount *account, const char *in);
 static gboolean bnet_is_d2(const BnetConnectionData *bnet);
@@ -1333,19 +1336,19 @@ struct BnetRegexStore {
     { NULL, "\"(.*)\"", BNET_TELNET_EID, NULL, "t" },
 
     // WHOIS RESPONSE
-    { NULL, "(?:You are |)(\\S+)(?:,| is) using (.+) in (.+)\\.", BNET_EID_INFO, bnet_recv_event_INFO_whois, NULL },
+    { NULL, "(?:You are |)(\\S+|\\S+ \\(\\*\\S+\\))(?:,| is) using (.+) in (.+)\\.", BNET_EID_INFO, bnet_recv_event_INFO_whois, NULL },
     // WHOIS AWAY RESPONSE
     // WHISPER AWAY RESPONSE
-    { NULL, "(?:You are|(\\S+) is) away \\((.+)\\)", BNET_EID_INFO, bnet_recv_event_INFO_away_response, NULL },
+    { NULL, "(?:You are|(\\S+|\\S+ \\(\\*\\S+\\)) is) away \\((.+)\\)", BNET_EID_INFO, bnet_recv_event_INFO_away_response, NULL },
     // WHOIS DND RESPONSE
-    { NULL, "(?:You are|(\\S+) is) refusing messages \\((.+)\\)", BNET_EID_INFO, bnet_recv_event_INFO_dnd_response, NULL },
+    { NULL, "(?:You are|(\\S+|\\S+ \\(\\*\\S+\\)) is) refusing messages \\((.+)\\)", BNET_EID_INFO, bnet_recv_event_INFO_dnd_response, NULL },
     // AWAY RESPONSE
     // STILL AWAY RESPONSE
     { NULL, "You are (still|now|no longer) marked as (?:being |)away\\.", BNET_EID_INFO, bnet_recv_event_INFO_away_state, NULL },
     // DND RESPONSE
     { NULL, "Do Not Disturb mode (engaged|cancelled)\\.", BNET_EID_INFO, bnet_recv_event_INFO_dnd_state, NULL },
     // WHISPER DND ERROR
-    { NULL, "(\\S+) is unavailable \\((.+)\\)", BNET_EID_INFO, bnet_recv_event_INFO_dnd_error, NULL },
+    { NULL, "(\\S+ \\(\\*\\S+\\)) is unavailable \\((.+)\\)", BNET_EID_INFO, bnet_recv_event_INFO_dnd_error, NULL },
     // BAN MESSAGE
     { NULL, "(\\S+) was banned by (\\S+)(?: \\((.+)\\)|)\\.", BNET_EID_INFO, bnet_recv_event_INFO_ban, NULL },
 
