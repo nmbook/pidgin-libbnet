@@ -10,7 +10,7 @@
 
   ;Name and file
   Name "Battle.net Protocol for Pidgin"
-  OutFile "out\pidgin-libbnet-1.0.0.exe"
+  OutFile "out\pidgin-libbnet-1.1.0.exe"
 
   ;Default installation folder
   InstallDir "$PROGRAMFILES\Pidgin"
@@ -21,7 +21,7 @@
   ;Request application privileges for Windows Vista
   RequestExecutionLevel admin
   
-  BrandingText "pidgin-libbnet-1.0.0"
+  BrandingText "pidgin-libbnet-1.1.0"
 
 ;--------------------------------
 ;Interface Settings

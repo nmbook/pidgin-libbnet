@@ -8,7 +8,7 @@
 # modify this to use a different compiler
 CC := gcc
 # modify this to add/remove the -g flag for
-CC_DEBUG := no
+CC_DEBUG := yes
 
 # tops for -I and -L
 PIDGIN_TREE_TOP := ../../pidgin-2.10.7
@@ -20,7 +20,8 @@ W32_TOP := $(PIDGIN_TREE_TOP)/../win32-dev
 #   A lot of B.net depends on using constants such as 'WAR3' as "character" constants.
 #   Rather than convert them to hex equivs (would have been error-prone, and left it harder
 #   to look at later), I just added this flag to the compile
-CC_WARNINGS = -Wall -Waggregate-return -Wcast-align -Wdeclaration-after-statement -Werror-implicit-function-declaration -Wextra -Wno-sign-compare -Wno-unused-parameter -Winit-self -Wmissing-declarations -Wmissing-prototypes -Wnested-externs -Wpointer-arith -Wundef -Wno-multichar
+CC_WARNINGS = -Wall -Waggregate-return -Wcast-align -Wdeclaration-after-statement -Werror-implicit-function-declaration -Wextra -Wno-sign-compare -Wno-unused-parameter -Winit-self -Wmissing-declarations -Wmissing-prototypes -Wnested-externs -Wpointer-arith -Wno-multichar
+# -Wundef
 
 ifeq ($(CC_DEBUG),yes)
 CC_DBG = -g
@@ -34,7 +35,7 @@ CC_LINKFLAGS = -Wl,--enable-auto-image-base
 # flags to compile a .c -> .o
 CC_COMPILE = $(CC_WARNINGS) -pipe $(CC_COMPFLAGS) $(CC_DBG) $(INC_PATHS) -c $(@:%.o=%.c) -o $@
 # flags to link .o's -> .dll or .so
-CC_LINK = -shared $(OBJECTS) $(LIB_PATHS) $(LIBS) $(CC_LINKFLAGS) -o $@
+CC_LINK = -shared $(OBJECTS) resource.o $(LIB_PATHS) $(LIBS) $(CC_LINKFLAGS) -o $@
 
 # -I: self, purple, glib, gmp
 INC_PATHS = -I. -I$(PURPLE_TOP) -I$(PURPLE_TOP)/win32 -I$(W32_TOP)/gtk_2_0-2.14/include/glib-2.0 -I$(W32_TOP)/gtk_2_0-2.14/lib/glib-2.0/include -I$(W32_TOP)/gmp/include
@@ -45,7 +46,7 @@ W32_LIBS = -lintl -lws2_32
 LIBS = -lpurple -lglib-2.0 -lgmp-3 $(W32_LIBS)
 
 TARGET = libbnet
-SOURCES = bnet.c bufferer.c srp.c keydecode.c sha1.c w3clan.c userdata.c
+SOURCES = bnet.c bufferer.c srp.c keydecode.c sha1.c
 OBJECTS = $(SOURCES:%.c=%.o)
 
 #Standard stuff here
@@ -53,10 +54,13 @@ OBJECTS = $(SOURCES:%.c=%.o)
 
 all: $(TARGET).dll
 
+resource.o:
+	windres -i resource.rc -o resource.o
+
 %.o: %.c
 	$(CC) $(CC_COMPILE)
 
-$(TARGET).dll: $(OBJECTS)
+$(TARGET).dll: $(OBJECTS) resource.o
 	$(CC) $(CC_LINK)
 
 # stops implicit rule spam in make -d

@@ -2698,7 +2698,7 @@ bnet_updatelist_timer(BnetConnectionData *bnet)
         }
     }
 
-    return G_SOURCE_CONTINUE;
+    return _G_SOURCE_CONTINUE;
 }
 
 static gboolean
@@ -2712,7 +2712,7 @@ bnet_join_timer(BnetConnectionData *bnet)
     if (room == NULL) {
         // we joined the channel while this timer was waiting...
         // do not send again
-        return G_SOURCE_REMOVE;
+        return _G_SOURCE_REMOVE;
     }
     norm = bnet_normalize(bnet->account, room);
     chat_id = g_str_hash(norm);
@@ -2720,7 +2720,7 @@ bnet_join_timer(BnetConnectionData *bnet)
     if (chat_id == bnet->bncs.channel.prpl_chat_id) {
         // we joined the channel while this timer was waiting...
         // do not send again
-        return G_SOURCE_REMOVE;
+        return _G_SOURCE_REMOVE;
     }
     cmd = g_strdup_printf("/join %s", room);
     if (bnet_is_telnet(bnet)) {
@@ -2729,7 +2729,7 @@ bnet_join_timer(BnetConnectionData *bnet)
         bnet_send_CHATCOMMAND(bnet, cmd);
     }
     g_free(cmd);
-    return G_SOURCE_REMOVE;
+    return _G_SOURCE_REMOVE;
 }
 
 static gboolean
@@ -2786,7 +2786,7 @@ bnet_filter_joindelay_timer(gpointer user_data)
     g_free(closure);
     g_free(username);
 
-    return G_SOURCE_REMOVE;
+    return _G_SOURCE_REMOVE;
 }
 
 static void

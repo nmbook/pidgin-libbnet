@@ -64,7 +64,6 @@
 #include "keydecode.h"
 #include "sha1.h"
 #include "srp.h"
-#include "userdata.h"
 
 // prpl data
 #define PROTOCOL_NAME      "bnet"
@@ -90,6 +89,10 @@
 #define BNET_DEFAULT_GROUP_CLAN    "Clan %T members"
 
 #define BNET_FILE_CACHE  "bnet-cache.xml"
+
+// glib 2.32
+#define _G_SOURCE_CONTINUE TRUE
+#define _G_SOURCE_REMOVE   FALSE
 
 // logon steps
 #define BNET_STEP_COUNT      5
