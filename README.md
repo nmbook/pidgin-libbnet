@@ -5,11 +5,11 @@ Introduction
 
 This plugin allows you to connect to Battle.net with Pidgin in order to chat.
 
-Battle.net is the Blizzard Entertainment gaming service that connects WarCraft? II, StarCraft?, Diablo II, WarCraft? III (and other) games on a single chatting, stats-saving, and matchmaking system.
+Battle.net is the Blizzard Entertainment gaming service that connects WarCraft II, StarCraft, Diablo II, WarCraft III (and other) games on a single chatting, stats-saving, and matchmaking system.
 
 This plugin provides chat features only and will not under any circumstance join games or alter the in-game experience for any of the above games. It requires that you own the game you are chatting as (by requiring a CD key for that game).
 
-This plugin requires that you specify an external 3rd-party "Logon Server" (otherwise known as BNLS for Battle.net Logon Server) that emulates the version checking process, and does not require any additional local files.
+This plugin requires that you specify an external 3rd-party "Logon Server" (otherwise known as BNLS for Battle.net Logon Server) that emulates the version checking process, and does not require any additional local files. The default BNLS, "bnls.net", should be trusted to do this.
 
 Setup
 =====
@@ -21,16 +21,14 @@ For those of you who commonly use "bots" or any of the official clients (StarCra
 Install on Windows
 ------------------
 
-To install the plugin on Windows, just run the featured installer. It will ask for your pidgin folder, by default this is C:\Program Files\Pidgin. On 64-bit systems this will be C:\Program Files (x86)\Pidgin. It will check if pidgin.exe is there to determine if this is actually your Pidgin folder. If so it'll install the required DLLs for you.
-
-(screenshot here)
+To install the plugin on Windows, just run the [installer for version 1.1.0] [3]. It will ask for your pidgin folder, by default this is C:\Program Files\Pidgin. On 64-bit systems this will be C:\Program Files (x86)\Pidgin. It will check if pidgin.exe is there to determine if this is actually your Pidgin folder. If so it'll install the required DLLs for you.
 
 Since Pidgin is 32-bit only on Windows, so is my plugin. This makes Windows the easiest for the user to install on.
 
 Install on Linux
 ----------------
 
-To install on Linux, I will provide an .so file to download and place in  `~/.purple/plugins/libbnet.so`. See the SVN source repository for it.
+To install on Linux, compile the .so file and place in  `~/.purple/plugins/libbnet.so`. See the SVN source repository for it.
 
 From version 0.8.0 and on, you will need to download the libgmp package (gmp on Fedora).
 
@@ -121,18 +119,12 @@ Create an Account
 
 Once you have the plugin in the right place, you should be able to just create a Classic Battle.net account. Enter your username and password, then enter the game to emulate in the Advanced tab, then enter your CD-Key(s). Then you should be able to just connect.
 
-(screenshot here)
-
 Joining a Channel
 =================
 
 Use Pidgin's Buddies > Join a chat menu item and join a channel on the  Battle.net account you made.
 
-(screenshot here)
-
 If you have used Battle.net before, you know that for some clients you go to a default channel immediately upon log on. To simplify things, this channel is not reported to Pidgin. Instead the first channel you attempt to join is. So you can easily set a channel to "Auto-Join" and "Persistent" in your buddy list (add the chat from the conversation, then right click the channel in your buddy list) and that'll be the only channel you join.
-
-(screenshot here)
 
 Do not set more than one channel to Auto-Join since Battle.net's protocol only allows you to physically be in one channel at a time. Doing this would cause you to join the selected channels in succession, activating Battle.net's spam detection which will kick you from Battle.net for five to ten minutes.
 
@@ -153,4 +145,4 @@ A: I have actually investigated many different programs that utilize libpurple, 
 
 [1]: https://github.com/nmbook/pidgin-libbnet/blob/master/COMPILE.md "Compiling from Source"
 [2]: http://developer.pidgin.im/wiki/BuildingWinPidgin               "Pidgin Development Environment on Windows"
-
+[3]: https://github.com/nmbook/pidgin-libbnet/blob/master/dist/win32/out/pidgin-libbnet-1.1.0.exe "Current Windows Installer (v1.1.0)"
