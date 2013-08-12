@@ -71,12 +71,12 @@
 #define PLUGIN_ID          "prpl-ribose-bnet"
 #define PLUGIN_NAME        "Classic Battle.net"
 #define PLUGIN_MAJOR_VER    1
-#define PLUGIN_MINOR_VER    0
+#define PLUGIN_MINOR_VER    1
 #define PLUGIN_MICRO_VER    0
 #define PLUGIN_SHORT_DESCR "Classic Battle.net Protocol Plugin"
 #define PLUGIN_DESCR       "Classic Battle.net Chat Server Protocol. Allows you to connect to classic Battle.net to chat with users on StarCraft, Diablo/II, and WarCraft II/III and their expansions."
 #define PLUGIN_AUTHOR      "Nate Book <nmbook@gmail.com>"
-#define PLUGIN_WEBSITE     "http://www.natembook.com"
+#define PLUGIN_WEBSITE     "http://natembook.com/prpl/bnet"
 #define QUOTE_(x)           #x
 #define QUOTE(x)            QUOTE_(x)
 #define PLUGIN_STR_VER      QUOTE(PLUGIN_MAJOR_VER.PLUGIN_MINOR_VER.PLUGIN_MICRO_VER)

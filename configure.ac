@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.69])
-AC_INIT([pidgin-libbnet], [1.0.0], [nmbook@gmail.com])
+AC_INIT([pidgin-libbnet], [1.1.0], [nmbook@gmail.com])
 AM_INIT_AUTOMAKE([-Wall -Werror])
 AM_PROG_AR
 LT_INIT
