@@ -7,7 +7,7 @@ AM_INIT_AUTOMAKE([-Wall -Werror])
 AM_PROG_AR
 LT_INIT
 AC_CONFIG_MACRO_DIR([m4])
-AC_CONFIG_SRCDIR([src/w3clan.c])
+AC_CONFIG_SRCDIR([src/bnet.c])
 AC_CONFIG_HEADERS([config.h])
 
 # Checks for programs.

@@ -110,7 +110,7 @@
 #define BNET_STATUS_OFFLINE "Offline"
 
 // buffer size
-#define BNET_INITIAL_BUFSIZE 512
+#define BNET_INITIAL_BUFSIZE 2048
 
 // protocol bytes
 #define BNET_PROTOCOL_BNCS  0x01
@@ -190,55 +190,61 @@ typedef enum {
 #define BNET_PROTOCOL_ID 0
 
 // architecture
-#define BNET_PLATFORM_IX86 'IX86'
-#define BNET_PLATFORM_PMAC 'PMAC'
-#define BNET_PLATFORM_XMAC 'XMAC'
+typedef enum {
+    BNET_PLATFORM_IX86 = 0x49583836,
+    BNET_PLATFORM_PMAC = 0x504d4143,
+    BNET_PLATFORM_XMAC = 0x584d4143,
+} BnetPlatformID;
 
 // language
-#define BNET_PRODLANG_ENUS 'enUS'
+typedef enum {
+    BNET_PRODLANG_ENUS = 0x656e5553,
+} BnetProductLanguage;
 
 // udp
 //'bnet'
-#define BNET_UDP_SIG 'bnet'
+#define BNET_UDP_SIG 0x626e6574
 
 // game product id
-#define BNET_PRODUCT_STAR 'STAR'
-#define BNET_PRODUCT_SEXP 'SEXP'
-#define BNET_PRODUCT_W2BN 'W2BN'
-#define BNET_PRODUCT_D2DV 'D2DV'
-#define BNET_PRODUCT_D2XP 'D2XP'
-#define BNET_PRODUCT_JSTR 'JSTR'
-#define BNET_PRODUCT_WAR3 'WAR3'
-#define BNET_PRODUCT_W3XP 'W3XP'
-#define BNET_PRODUCT_DRTL 'DRTL'
-#define BNET_PRODUCT_DSHR 'DSHR'
-#define BNET_PRODUCT_SSHR 'SSHR'
-#define BNET_PRODUCT_CHAT 'CHAT'
+typedef enum {
+    BNET_PRODUCT_STAR = 0x53544152,
+    BNET_PRODUCT_SEXP = 0x53455850,
+    BNET_PRODUCT_W2BN = 0x5732424e,
+    BNET_PRODUCT_D2DV = 0x44324456,
+    BNET_PRODUCT_D2XP = 0x44325850,
+    BNET_PRODUCT_JSTR = 0x4a535452,
+    BNET_PRODUCT_WAR3 = 0x57415233,
+    BNET_PRODUCT_W3XP = 0x57335850,
+    BNET_PRODUCT_DRTL = 0x4452544c,
+    BNET_PRODUCT_DSHR = 0x44534852,
+    BNET_PRODUCT_SSHR = 0x53534852,
+    BNET_PRODUCT_CHAT = 0x43484152,
+    BNET_PRODUCT_W3DM = 0x5733444d,
+} BnetProductID;
 
 /* This is the DWORD-string tag type, as a 32-bit unsigned integer
  * Use bnet_tag_to_string and bnet_string_to_tag to convert between a string version */
 typedef guint32 BnetDwordTag;
 
-// this type specifies values that can come from BNET_PRODUCT_*
-typedef BnetDwordTag BnetProductID;
-
 // versioning system to use
-typedef gint32 BnetVersioningSystem;
-// SSHR, JSTR: SID_CLIENTID, SID_LOCALEINFO, SID_SYSTEMINFO, SID_STARTVERSIONING; SID_CDKEY
-#define BNET_VERSIONING_LEGACY  0x00
-// DRTL, DSHR, W2BN: SID_CLIENTID2, SID_LOCALEINFO, SID_STARTVERSIONING; SID_CDKEY2
-#define BNET_VERSIONING_LEGACY2 0x01
-// STAR, SEXP, D2DV, D2XP, W3DM, WAR3, W3XP: SID_AUTH_INFO; SID_AUTH_CHECK
-#define BNET_VERSIONING_AUTH    0x02
+typedef enum {
+    // SSHR, JSTR: SID_CLIENTID, SID_LOCALEINFO, SID_SYSTEMINFO, SID_STARTVERSIONING; SID_CDKEY
+    BNET_VERSIONING_LEGACY  = 0x00,
+    // DRTL, DSHR, W2BN: SID_CLIENTID2, SID_LOCALEINFO, SID_STARTVERSIONING; SID_CDKEY2
+    BNET_VERSIONING_LEGACY2 = 0x01,
+    // STAR, SEXP, D2DV, D2XP, W3DM, WAR3, W3XP: SID_AUTH_INFO; SID_AUTH_CHECK
+    BNET_VERSIONING_AUTH    = 0x02,
+} BnetVersioningSystem;
 
 // account logon system to use
-typedef gint32 BnetLogonSystem;
+typedef enum {
 // DRTL, DSHR, STAR, SEXP, SSHR, JSTR, W2BN, D2DV, D2XP: X-SHA-1 SID_LOGONRESPONSE/SID_LOGONRESPONSE2
-#define BNET_LOGON_XSHA1        0x00
-// W3DM: SRP (NLS version 1)
-#define BNET_LOGON_SRPOLD       0x01
-// WAR3, W3XP: SRP (NLS version 2)
-#define BNET_LOGON_SRP          0x02
+    BNET_LOGON_XSHA1  = 0x00,
+    // W3DM: SRP (NLS version 1)
+    BNET_LOGON_SRPOLD = 0x01,
+    // WAR3, W3XP: SRP (NLS version 2)
+    BNET_LOGON_SRP    = 0x02,
+} BnetLogonSystem;
 
 // possible event numbers for telnet
 // 10xx => CHATEVENT EIDs
@@ -365,6 +371,8 @@ typedef enum {
     BNET_EID_CHANNELRESTRICTED   = 0x0000000F,
     BNET_EID_INFO                = 0x00000012,
     BNET_EID_ERROR               = 0x00000013,
+    BNET_EID_INFO_PARSED         = 0x00000014,
+    BNET_EID_ERROR_PARSED        = 0x00000015,
     BNET_EID_EMOTE               = 0x00000017
 } BnetChatEventID;
 
@@ -393,6 +401,39 @@ typedef enum {
     BNET_CHAN_FLAG_TECHSPPT  = 0x00010000
 } BnetChatEventFlags;
 
+typedef struct {
+    guint64 timestamp;
+    guint32 id;
+    guint32 flags;
+    guint32 ping;
+    gchar *name;
+    gchar *text;
+} BnetDelayedEvent;
+
+/* How to show an EID_INFO message */
+typedef enum {
+    /* hide this EID_INFO */
+    SHOW_NEVER        = 0,
+    /* try to show in current context as the response to a command */
+    SHOW_AS_RESPONSE  = 1,
+    /* always show in the current channel (kick, ban, and other non-commnd response messages) */
+    SHOW_IN_CHAT_ONLY = 2,
+} BnetEventShowMode;
+
+typedef enum {
+    BNET_USER_TYPE_CHANNELUSER = 0x01,
+    BNET_USER_TYPE_FRIEND      = 0x02,
+    BNET_USER_TYPE_CLANMEMBER  = 0x04,
+} BnetUserType;
+
+typedef struct {
+    gchar *key;
+    gchar *value;
+    gchar *short_value;
+    gboolean full_view;
+} BnetStatsDataItem;
+
+
 // the "abstract" Battle.net user type
 // All possible buddy list entries are one of
 // the three types of this:
@@ -400,15 +441,13 @@ typedef enum {
 // BnetFriendInfo: users in your Battle.net friend list
 // BnetClanMember: users in your WarCraft III clan
 typedef struct {
-    gint32 type;
+    BnetUserType type;
     gchar *username;
     gchar data[48];
 } BnetUser;
 
-#define BNET_USER_TYPE_CHANNELUSER  0x01
-
 typedef struct {
-    guint32 type;
+    BnetUserType type;
     char *username;
     char *stats_data;
     BnetChatEventFlags flags;
@@ -416,6 +455,9 @@ typedef struct {
     gboolean hidden;
     
     char *stats_message;
+
+    gboolean filter_wait_callback;
+    gboolean left_channel;
 } BnetChannelUser;
 
 // friend status flags
@@ -436,10 +478,10 @@ typedef enum {
     BNET_FRIEND_LOCATION_GAME_PROTECTED = 0x05
 } BnetFriendLocation;
 
-#define BNET_USER_TYPE_FRIEND       0x02
+
 
 typedef struct {
-    guint32 type;
+    BnetUserType type;
     // account name from friend list
     char *account;
     // information directly from friend list
@@ -476,8 +518,6 @@ typedef struct {
 } BnetQueueElement;
 */
 
-#define BNET_USER_TYPE_CLANMEMBER 0x04
-
 typedef enum {
     BNET_CLAN_RANK_INITIATE  = 0,
     BNET_CLAN_RANK_PEON      = 1,
@@ -493,7 +533,7 @@ typedef enum {
 
 typedef struct {
     // type = 
-    guint32 type;
+    BnetUserType type;
     gchar *name;
     BnetClanMemberRank rank;
     BnetClanMemberStatus status;
@@ -504,20 +544,21 @@ typedef struct {
 
 typedef BnetDwordTag BnetClanTag;
 
-typedef guint8 BnetClanResponseCode;
-#define BNET_CLAN_RESPONSE_SUCCESS          0x00
-#define BNET_CLAN_RESPONSE_NAMEINUSE        0x01
-#define BNET_CLAN_RESPONSE_TOOSOON          0x02
-#define BNET_CLAN_RESPONSE_NOTENOUGHMEMBERS 0x03
-#define BNET_CLAN_RESPONSE_DECLINE          0x04
-#define BNET_CLAN_RESPONSE_UNAVAILABLE      0x05
-#define BNET_CLAN_RESPONSE_ACCEPT           0x06
-#define BNET_CLAN_RESPONSE_NOTAUTHORIZED    0x07
-#define BNET_CLAN_RESPONSE_NOTALLOWED       0x08
-#define BNET_CLAN_RESPONSE_FULL             0x09
-#define BNET_CLAN_RESPONSE_BADTAG           0x0a
-#define BNET_CLAN_RESPONSE_BADNAME          0x0b
-#define BNET_CLAN_RESPONSE_USERNOTFOUND     0x0c
+typedef enum {
+    BNET_CLAN_RESPONSE_SUCCESS          = 0x00,
+    BNET_CLAN_RESPONSE_NAMEINUSE        = 0x01,
+    BNET_CLAN_RESPONSE_TOOSOON          = 0x02,
+    BNET_CLAN_RESPONSE_NOTENOUGHMEMBERS = 0x03,
+    BNET_CLAN_RESPONSE_DECLINE          = 0x04,
+    BNET_CLAN_RESPONSE_UNAVAILABLE      = 0x05,
+    BNET_CLAN_RESPONSE_ACCEPT           = 0x06,
+    BNET_CLAN_RESPONSE_NOTAUTHORIZED    = 0x07,
+    BNET_CLAN_RESPONSE_NOTALLOWED       = 0x08,
+    BNET_CLAN_RESPONSE_FULL             = 0x09,
+    BNET_CLAN_RESPONSE_BADTAG           = 0x0a,
+    BNET_CLAN_RESPONSE_BADNAME          = 0x0b,
+    BNET_CLAN_RESPONSE_USERNOTFOUND     = 0x0c,
+} BnetClanResponseCode;
 
 typedef enum {
     BNET_REALM_SUCCESS           = 0x00,
@@ -615,23 +656,24 @@ typedef enum {
     BNET_WID_CLANRECORD = 0x08,
 } BnetW3GeneralSubcommand;
 
-#define BNET_W3RECORD_USER_SOLO 'SOLO'
-#define BNET_W3RECORD_USER_TEAM 'TEAM'
-#define BNET_W3RECORD_USER_FFA  'FFA '
-#define BNET_W3RECORD_RACE_ORC  'ORC '
-#define BNET_W3RECORD_RACE_HUMA 'HUMA'
-#define BNET_W3RECORD_RACE_SCOU 'SCOU'
-#define BNET_W3RECORD_RACE_NELF 'NELF'
-#define BNET_W3RECORD_RACE_RAND 'RAND'
-#define BNET_W3RECORD_RACE_TRNA 'TRNA'
-#define BNET_W3RECORD_TEAM_2VS2 '2VS2'
-#define BNET_W3RECORD_TEAM_3VS3 '3VS3'
-#define BNET_W3RECORD_TEAM_4VS4 '4VS4'
-#define BNET_W3RECORD_CLAN_SOLO 'CLNS'
-#define BNET_W3RECORD_CLAN_2VS2 'CLN2'
-#define BNET_W3RECORD_CLAN_3VS3 'CLN3'
-#define BNET_W3RECORD_CLAN_4VS4 'CLN4'
-typedef guint32 BnetW3RecordType;
+typedef enum {
+    BNET_W3RECORD_USER_SOLO = 0x534f4c4f,
+    BNET_W3RECORD_USER_TEAM = 0x5445414d,
+    BNET_W3RECORD_USER_FFA  = 0x46464120,
+    BNET_W3RECORD_RACE_ORC  = 0x00000001,
+    BNET_W3RECORD_RACE_HUMA = 0x00000002,
+    BNET_W3RECORD_RACE_SCOU = 0x00000003,
+    BNET_W3RECORD_RACE_NELF = 0x00000004,
+    BNET_W3RECORD_RACE_RAND = 0x00000000,
+    BNET_W3RECORD_RACE_TRNA = 0x00000005,
+    BNET_W3RECORD_TEAM_2VS2 = 0x32565332,
+    BNET_W3RECORD_TEAM_3VS3 = 0x33565333,
+    BNET_W3RECORD_TEAM_4VS4 = 0x34565534,
+    BNET_W3RECORD_CLAN_SOLO = 0x434c4e53,
+    BNET_W3RECORD_CLAN_2VS2 = 0x434c4e32,
+    BNET_W3RECORD_CLAN_3VS3 = 0x434c4e33,
+    BNET_W3RECORD_CLAN_4VS4 = 0x434c4e34,
+} BnetW3RecordType;
 
 typedef enum {
     // not waiting for anything
@@ -668,7 +710,7 @@ typedef enum {
     // whether we have found a suitable location/product pair from the channel, friends, or clan list
     BNET_LOOKUP_INFO_FOUND_LOCPROD             = 0x00100000,
     // whether we have found a suitable clan tag (or proof they aren't in a clan) from the channel, friends, or clan list
-    BNET_LOOKUP_INFO_FOUND_W3_CLAN             = 0x00200000,
+    BNET_LOOKUP_INFO_FOUND_W3_TAG              = 0x00200000,
 } BnetLookupInfoFlags;
 
 typedef struct {
@@ -701,6 +743,28 @@ struct BnetPacketCookieKey {
 // information of upcoming tournament, sent by SID_W3GENERAL.WID_TOURNAMENT (name = tournament name)
 #define BNET_MOTD_TYPE_W3_T     5
 #define BNET_MOTD_TYPES         6
+
+// userdata request
+#define BNET_USERDATA_PROFILE_REQUEST "profile\\sex\nprofile\\age\nprofile\\location\nprofile\\description"
+#define BNET_USERDATA_RECORD_REQUEST(prod, num) "Record\\%s\\%d\\wins\nRecord\\%s\\%d\\losses\nRecord\\%s\\%d\\disconnects\nRecord\\%s\\%d\\last game\nRecord\\%s\\%d\\last game result", (prod), (num), (prod), (num), (prod), (num), (prod), (num), (prod), (num)
+#define BNET_USERDATA_RECORD_LADDER_REQUEST(prod, num) "Record\\%s\\%d\\wins\nRecord\\%s\\%d\\losses\nRecord\\%s\\%d\\disconnects\nRecord\\%s\\%d\\last game\nRecord\\%s\\%d\\last game result\nRecord\\%s\\%d\\rating\nRecord\\%s\\%d\\high rating\nDynKey\\%s\\%d\\rank\nRecord\\%s\\%d\\high rank", (prod), (num), (prod), (num), (prod), (num), (prod), (num), (prod), (num), (prod), (num), (prod), (num), (prod), (num), (prod), (num)
+#define BNET_USERDATA_SYSTEM_REQUEST "System\\Account Created\nSystem\\Last Logoff\nSystem\\Last Logon\nSystem\\Time Logged\nSystem\\Account Expires\n"
+#define BNET_USERDATA_RECORD_NORMAL  0
+#define BNET_USERDATA_RECORD_LADDER  1
+#define BNET_USERDATA_RECORD_IRONMAN 3
+#define BNET_RECORD_NONE    0
+#define BNET_RECORD_NORMAL  1
+#define BNET_RECORD_LADDER  2
+#define BNET_RECORD_IRONMAN 8
+
+typedef enum {
+    BNET_READUSERDATA_REQUEST_NONE    = 0x0,
+    BNET_READUSERDATA_REQUEST_PROFILE = 0x1,
+    BNET_READUSERDATA_REQUEST_RECORD  = 0x2,
+    BNET_READUSERDATA_REQUEST_SYSTEM  = 0x4
+} BnetUserDataRequestType;
+
+typedef struct _BnetUserDataRequest BnetUserDataRequest;
 
 // stores socket connection data for a specific socket
 struct SocketData {
@@ -792,6 +856,7 @@ typedef struct {
             gchar *name;
             BnetChatEventFlags flags;
             GList *user_list;
+            GQueue *delayed_event_queue;
             int prpl_chat_id;
             guint join_timer_handle;
         } channel;
@@ -881,6 +946,10 @@ typedef struct {
     gchar *clan_name;
 } BnetClanInvitationCallbackData;
 
+typedef struct {
+    BnetConnectionData *bnet;
+    BnetChannelUser *bcu;
+} BnetFilterJoinDelayCallback;
 
 typedef enum {
     BNET_CMD_NONE = 0,
@@ -1056,7 +1125,7 @@ static int  bnet_send_NULL(const BnetConnectionData *bnet);
 static int  bnet_send_STARTVERSIONING(const BnetConnectionData *bnet);
 static int  bnet_send_REPORTVERSION(const BnetConnectionData *bnet,
             guint32 exe_version, guint32 exe_checksum, char *exe_info);
-static int  bnet_send_ENTERCHAT(const BnetConnectionData *bnet);
+static int  bnet_send_ENTERCHAT(const BnetConnectionData *bnet, const gchar *stats);
 static int  bnet_send_GETCHANNELLIST(const const BnetConnectionData *bnet);
 static int  bnet_send_JOINCHANNEL(const BnetConnectionData *bnet,
             BnetChannelJoinFlags channel_flags, char *channel);
@@ -1137,51 +1206,61 @@ static void bnet_recv_CLANMEMBERSTATUSCHANGE(BnetConnectionData *bnet, BnetPacke
 static void bnet_recv_CLANMEMBERRANKCHANGE(BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_recv_CLANMEMBERINFO(BnetConnectionData *bnet, BnetPacket *pkt);
 static void bnet_recv_event_SHOWUSER(BnetConnectionData *bnet, PurpleConvChat *chat,
-            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping);
+            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping, guint64 timestamp);
 static void bnet_recv_event_JOIN(BnetConnectionData *bnet, PurpleConvChat *chat,
-            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping);
+            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping, guint64 timestamp);
 static void bnet_recv_event_LEAVE(BnetConnectionData *bnet, PurpleConvChat *chat,
-            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping);
+            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping, guint64 timestamp);
 static void bnet_recv_event_WHISPER(BnetConnectionData *bnet, PurpleConvChat *chat,
-            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping);
+            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping, guint64 timestamp);
 static void bnet_recv_event_TALK(BnetConnectionData *bnet, PurpleConvChat *chat,
-            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping);
+            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping, guint64 timestamp);
 static void bnet_recv_event_BROADCAST(BnetConnectionData *bnet, PurpleConvChat *chat,
-            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping);
+            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping, guint64 timestamp);
 static void bnet_recv_event_CHANNEL(BnetConnectionData *bnet, PurpleConvChat *chat,
-            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping);
+            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping, guint64 timestamp);
 static void bnet_recv_event_USERFLAGS(BnetConnectionData *bnet, PurpleConvChat *chat,
-            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping);
+            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping, guint64 timestamp);
 static void bnet_recv_event_WHISPERSENT(BnetConnectionData *bnet, PurpleConvChat *chat,
-            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping);
+            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping, guint64 timestamp);
 static void bnet_recv_event_CHANNELFULL(BnetConnectionData *bnet, PurpleConvChat *chat,
-            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping);
+            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping, guint64 timestamp);
 static void bnet_recv_event_CHANNELDOESNOTEXIST(BnetConnectionData *bnet, PurpleConvChat *chat,
-            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping);
+            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping, guint64 timestamp);
 static void bnet_recv_event_CHANNELRESTRICTED(BnetConnectionData *bnet, PurpleConvChat *chat,
-            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping);
-static gboolean bnet_recv_event_INFO_whois(BnetConnectionData *bnet, GRegex *regex,
-            const gchar *text, GMatchInfo *mi);
-static gboolean bnet_recv_event_INFO_away_response(BnetConnectionData *bnet, GRegex *regex,
-            const gchar *text, GMatchInfo *mi);
-static gboolean bnet_recv_event_INFO_dnd_response(BnetConnectionData *bnet, GRegex *regex,
-            const gchar *text, GMatchInfo *mi);
-static gboolean bnet_recv_event_INFO_away_state(BnetConnectionData *bnet, GRegex *regex,
-            const gchar *text, GMatchInfo *mi);
-static gboolean bnet_recv_event_INFO_dnd_state(BnetConnectionData *bnet, GRegex *regex,
-            const gchar *text, GMatchInfo *mi);
-static gboolean bnet_recv_event_INFO_dnd_error(BnetConnectionData *bnet, GRegex *regex,
-            const gchar *text, GMatchInfo *mi);
-static gboolean bnet_recv_event_INFO_ban(BnetConnectionData *bnet, GRegex *regex,
-            const gchar *text, GMatchInfo *mi);
+            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping, guint64 timestamp);
+static BnetEventShowMode bnet_recv_event_INFO_whois(BnetConnectionData *bnet, GRegex *regex,
+            const gchar *text, GMatchInfo *mi, guint64 timestamp);
+static BnetEventShowMode bnet_recv_event_INFO_away_response(BnetConnectionData *bnet, GRegex *regex,
+            const gchar *text, GMatchInfo *mi, guint64 timestamp);
+static BnetEventShowMode bnet_recv_event_INFO_dnd_response(BnetConnectionData *bnet, GRegex *regex,
+            const gchar *text, GMatchInfo *mi, guint64 timestamp);
+static BnetEventShowMode bnet_recv_event_INFO_away_state(BnetConnectionData *bnet, GRegex *regex,
+            const gchar *text, GMatchInfo *mi, guint64 timestamp);
+static BnetEventShowMode bnet_recv_event_INFO_dnd_state(BnetConnectionData *bnet, GRegex *regex,
+            const gchar *text, GMatchInfo *mi, guint64 timestamp);
+static BnetEventShowMode bnet_recv_event_INFO_dnd_error(BnetConnectionData *bnet, GRegex *regex,
+            const gchar *text, GMatchInfo *mi, guint64 timestamp);
+static BnetEventShowMode bnet_recv_event_INFO_ban(BnetConnectionData *bnet, GRegex *regex,
+            const gchar *text, GMatchInfo *mi, guint64 timestamp);
+static BnetEventShowMode bnet_recv_event_INFO_kick(BnetConnectionData *bnet, GRegex *regex,
+            const gchar *text, GMatchInfo *mi, guint64 timestamp);
+static BnetEventShowMode bnet_recv_event_INFO_unban(BnetConnectionData *bnet, GRegex *regex,
+            const gchar *text, GMatchInfo *mi, guint64 timestamp);
 static void bnet_recv_event_INFO(BnetConnectionData *bnet, PurpleConvChat *chat,
-            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping);
+            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping, guint64 timestamp);
 static void bnet_recv_event_ERROR(BnetConnectionData *bnet, PurpleConvChat *chat,
-            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping);
+            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping, guint64 timestamp);
 static void bnet_recv_event_EMOTE(BnetConnectionData *bnet, PurpleConvChat *chat,
-            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping);
-static gboolean bnet_parse_telnet_line_event(BnetConnectionData *bnet, GRegex *regex,
-            const gchar *text, GMatchInfo *mi);
+            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping, guint64 timestamp);
+static void bnet_recv_event_INFO_PARSED(BnetConnectionData *bnet, PurpleConvChat *chat,
+            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping, guint64 timestamp);
+static void bnet_recv_event_ERROR_PARSED(BnetConnectionData *bnet, PurpleConvChat *chat,
+            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping, guint64 timestamp);
+static void bnet_recv_event(BnetConnectionData *bnet, PurpleConvChat *chat, BnetChatEventID event_id,
+            const gchar *name, const gchar *text, BnetChatEventFlags flags, gint32 ping, guint64 timestamp);
+static BnetEventShowMode bnet_parse_telnet_line_event(BnetConnectionData *bnet, GRegex *regex,
+            const gchar *text, GMatchInfo *mi, guint64 timestamp);
 static void bnet_parse_telnet_line(BnetConnectionData *bnet, const gchar *line);
 static void bnet_parse_packet(BnetConnectionData *bnet, const guint8 packet_id,
             const gchar *packet_start, const guint16 packet_len);
@@ -1214,7 +1293,7 @@ static char *bnet_format_filetime(guint64 filetime);
 static guint64 bnet_get_filetime(time_t time);
 static char *bnet_format_strsec(char *secs_str);
 static char *bnet_to_utf8_crlf(const char *input);
-static char *bnet_utf8_to_iso88951(const char *input);
+static char *bnet_utf8_to_iso88591(const char *input);
 static gchar *bnet_escape_text(const gchar *text, int length, gboolean replace_linebreaks);
 static void bnet_find_detached_buddies(BnetConnectionData *bnet);
 static void bnet_do_whois(const BnetConnectionData *bnet, const char *who);
@@ -1248,6 +1327,14 @@ static void bnet_profile_get_for_edit(BnetConnectionData *bnet);
 static void bnet_profile_show_write_dialog(BnetConnectionData *bnet,
             const char *psex, const char *page, const char *ploc, const char *pdescr);
 static void bnet_profile_write_cb(gpointer data);
+static void bnet_userdata_request_free(BnetUserDataRequest *req);
+static BnetUserDataRequest *bnet_userdata_request_new(int cookie, BnetUserDataRequestType type,
+            const gchar *username, gchar **userdata_keys,
+            BnetProductID product);
+static int bnet_userdata_request_get_cookie(const BnetUserDataRequest *req);
+static gchar *bnet_userdata_request_get_key_by_index(const BnetUserDataRequest *req, int i);
+static BnetUserDataRequestType bnet_userdata_request_get_type(const BnetUserDataRequest *req);
+static BnetProductID bnet_userdata_request_get_product(const BnetUserDataRequest *req);
 static GHashTable *bnet_chat_info_defaults(PurpleConnection *gc, const char *chat_name);
 static GList *bnet_chat_info(PurpleConnection *gc);
 static char *bnet_channel_message_parse(char *stats_data, BnetChatEventFlags flags, int ping);
@@ -1260,7 +1347,10 @@ static char *bnet_status_text(PurpleBuddy *b);
 static void bnet_tooltip_text(PurpleBuddy *buddy, PurpleNotifyUserInfo *info,
             gboolean full);
 static char *bnet_get_location_text(BnetFriendLocation location, char *location_name);
-static char *bnet_get_product_name(BnetProductID product);
+static const gchar *bnet_get_product_name(BnetProductID product);
+static gchar *bnet_get_product_info(const gchar *user_stats);
+static gchar *bnet_parse_user_flags(BnetChatEventFlags flags);
+static GList *bnet_parse_user_stats(BnetProductID product, const gchar *stats);
 static gchar *bnet_get_product_id_str(BnetProductID product);
 static GList *bnet_status_types(PurpleAccount *account);
 static void bnet_add_buddy(PurpleConnection *gc, PurpleBuddy *buddy, PurpleGroup *group);
@@ -1283,8 +1373,9 @@ static int bnet_get_key_count(const BnetConnectionData *bnet);
 static GList *bnet_actions(PurplePlugin *plugin, gpointer context);
 static void init_plugin(PurplePlugin *plugin);
 
+
 typedef void (*BnetChatEventFunction)(BnetConnectionData *, PurpleConvChat *, const gchar *,
-        const gchar *, BnetChatEventFlags, gint32);
+        const gchar *, BnetChatEventFlags, gint32, guint64);
 
 struct BnetChatEvent {
     BnetChatEventID id;
@@ -1311,13 +1402,16 @@ struct BnetChatEvent {
     { 0, NULL, FALSE },
     { BNET_EID_INFO, bnet_recv_event_INFO, FALSE },
     { BNET_EID_ERROR, bnet_recv_event_ERROR, FALSE },
-    { 0, NULL, FALSE },
-    { 0, NULL, FALSE },
+    { BNET_EID_INFO_PARSED, bnet_recv_event_INFO_PARSED, FALSE }, /* defunct by Battle.net, used in delayed event handling */
+    { BNET_EID_ERROR_PARSED, bnet_recv_event_ERROR_PARSED, FALSE }, /* defunct by Battle.net, used in delayed event handling */
     { 0, NULL, FALSE },
     { BNET_EID_EMOTE, bnet_recv_event_EMOTE, FALSE },
+
+    /* NULL TERMINATION */
+    { 0, NULL, FALSE }
 };
 
-typedef gboolean (*BnetRegexMatchFunction)(BnetConnectionData *, GRegex *, const gchar *, GMatchInfo *);
+typedef BnetEventShowMode (*BnetRegexMatchFunction)(BnetConnectionData *, GRegex *, const gchar *, GMatchInfo *, guint64);
 
 struct BnetRegexStore {
     GRegex *regex;
@@ -1336,24 +1430,28 @@ struct BnetRegexStore {
     { NULL, "\"(.*)\"", BNET_TELNET_EID, NULL, "t" },
 
     // WHOIS RESPONSE
-    { NULL, "(?:You are |)(\\S+|\\S+ \\(\\*\\S+\\))(?:,| is) using (.+) in (.+)\\.", BNET_EID_INFO, bnet_recv_event_INFO_whois, NULL },
+    { NULL, "(?:You are |)(\\S+(?:| \\(\\*\\S+\\)))(?:,| is) using (.+) in (.+)\\.", BNET_EID_INFO, bnet_recv_event_INFO_whois, NULL },
     // WHOIS AWAY RESPONSE
     // WHISPER AWAY RESPONSE
-    { NULL, "(?:You are|(\\S+|\\S+ \\(\\*\\S+\\)) is) away \\((.+)\\)", BNET_EID_INFO, bnet_recv_event_INFO_away_response, NULL },
+    { NULL, "(?:You are|(\\S+(?:| \\(\\*\\S+\\))) is) away \\((.+)\\)", BNET_EID_INFO, bnet_recv_event_INFO_away_response, NULL },
     // WHOIS DND RESPONSE
-    { NULL, "(?:You are|(\\S+|\\S+ \\(\\*\\S+\\)) is) refusing messages \\((.+)\\)", BNET_EID_INFO, bnet_recv_event_INFO_dnd_response, NULL },
+    { NULL, "(?:You are|(\\S+(?:| \\(\\*\\S+\\))) is) refusing messages \\((.+)\\)", BNET_EID_INFO, bnet_recv_event_INFO_dnd_response, NULL },
     // AWAY RESPONSE
     // STILL AWAY RESPONSE
     { NULL, "You are (still|now|no longer) marked as (?:being |)away\\.", BNET_EID_INFO, bnet_recv_event_INFO_away_state, NULL },
     // DND RESPONSE
     { NULL, "Do Not Disturb mode (engaged|cancelled)\\.", BNET_EID_INFO, bnet_recv_event_INFO_dnd_state, NULL },
     // WHISPER DND ERROR
-    { NULL, "(\\S+ \\(\\*\\S+\\)) is unavailable \\((.+)\\)", BNET_EID_INFO, bnet_recv_event_INFO_dnd_error, NULL },
+    { NULL, "(\\S+(?:| \\(\\*\\S+\\))) is unavailable \\((.+)\\)", BNET_EID_INFO, bnet_recv_event_INFO_dnd_error, NULL },
     // BAN MESSAGE
-    { NULL, "(\\S+) was banned by (\\S+)(?: \\((.+)\\)|)\\.", BNET_EID_INFO, bnet_recv_event_INFO_ban, NULL },
+    { NULL, "(\\S+(?:| \\(\\*\\S+\\))) was banned by (\\S+(?:| \\(\\*\\S+\\)))(?: \\((.+)\\)|)\\.", BNET_EID_INFO, bnet_recv_event_INFO_ban, NULL },
+    // KICK MESSAGE
+    { NULL, "(\\S+(?:| \\(\\*\\S+\\))) was kicked out of the channel by (\\S+(?:| \\(\\*\\S+\\)))(?: \\((.+)\\)|)\\.", BNET_EID_INFO, bnet_recv_event_INFO_kick, NULL },
+    // UNBAN MESSAGE
+    { NULL, "(\\S+(?:| \\(\\*\\S+\\))) was unbanned by (\\S+(?:| \\(\\*\\S+\\)))\\.", BNET_EID_INFO, bnet_recv_event_INFO_unban, NULL },
 
     // NULL TERMINATOR
-    { NULL, NULL, 0, NULL, NULL },
+    { NULL, NULL, 0, NULL, NULL }
 };
 
 #endif
