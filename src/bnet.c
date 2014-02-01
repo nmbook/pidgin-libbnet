@@ -86,10 +86,8 @@ static void
 bnet_channel_user_free(BnetChannelUser *bcu)
 {
     if (bcu != NULL) {
-        if (bcu->filter_wait_callback) {
-            // DO NOT free until a timeout callback actually occurs, or else the closure will be pointing to NULL channel user data
-            bcu->left_channel = TRUE;
-            return;
+        if (bcu->filter_joindelay_timer_handle) {
+            purple_timeout_remove(bcu->filter_joindelay_timer_handle);
         }
         if (bcu->username != NULL) {
             g_free(bcu->username);
@@ -2738,11 +2736,11 @@ bnet_filter_joindelay_timer(gpointer user_data)
     BnetFilterJoinDelayCallback *closure = user_data;
     BnetConnectionData *bnet = closure->bnet;
     BnetChannelUser *bcu = closure->bcu;
-    gboolean will_show_events;
     PurpleConversation *conv = NULL;
     PurpleConvChat *chat = NULL;
     GQueue *new_queue;
     gchar *username = NULL;
+    gchar *channel_message = NULL;
 
     if (!bnet->bncs.chat_env.first_join && bnet->bncs.channel.prpl_chat_id != 0) {
         conv = purple_find_chat(bnet->account->gc, bnet->bncs.channel.prpl_chat_id);
@@ -2751,29 +2749,20 @@ bnet_filter_joindelay_timer(gpointer user_data)
         chat = purple_conversation_get_chat_data(conv);
     }
 
-    // always set the user's filter_wait_callback to FALSE
-    bcu->filter_wait_callback = FALSE;
+    // always set the user's filter_joindelay_timer_handle to FALSE
+    bcu->filter_joindelay_timer_handle = 0;
     username = g_strdup(bcu->username);
-    if (bcu->left_channel) {
-        // they left: they are filtered
-        bnet_channel_user_free(bcu);
-        will_show_events = FALSE;
-    } else {
-        // they didn't leave, show join event
-        gchar *channel_message = bnet_channel_message_parse(bcu->stats_data, bcu->flags, bcu->ping);
-        purple_conv_chat_add_user(chat, bcu->username, channel_message,
-                bnet_channel_flags_to_prpl_flags(bcu->flags), TRUE);
-        g_free(channel_message);
-        will_show_events = TRUE;
-    }
+    // they didn't leave, show join event
+    channel_message = bnet_channel_message_parse(bcu->stats_data, bcu->flags, bcu->ping);
+    purple_conv_chat_add_user(chat, bcu->username, channel_message,
+            bnet_channel_flags_to_prpl_flags(bcu->flags), TRUE);
+    g_free(channel_message);
     // go through the delayed event queue and display everything for this user (or simply discard if the user left)
     new_queue = g_queue_new();
     while (!g_queue_is_empty(bnet->bncs.channel.delayed_event_queue)) {
         BnetDelayedEvent *ev = g_queue_pop_tail(bnet->bncs.channel.delayed_event_queue);
         if (strcmp(ev->name, username) == 0) {
-            if (will_show_events) {
-                bnet_recv_event(bnet, chat, ev->id, ev->name, ev->text, ev->flags, ev->ping, ev->timestamp);
-            }
+            bnet_recv_event(bnet, chat, ev->id, ev->name, ev->text, ev->flags, ev->ping, ev->timestamp);
             bnet_delayed_event_free(ev);
         } else {
             g_queue_push_head(new_queue, ev);
@@ -3283,8 +3272,7 @@ bnet_recv_event_JOIN(BnetConnectionData *bnet, PurpleConvChat *chat,
     bcu->flags = flags;
     bcu->ping = ping;
     bcu->hidden = FALSE;
-    bcu->filter_wait_callback = FALSE;
-    bcu->left_channel = FALSE;
+    bcu->filter_joindelay_timer_handle = 0;
     bnet->bncs.channel.user_list = g_list_append(bnet->bncs.channel.user_list, bcu);
 
     if (chat != NULL) {
@@ -3297,11 +3285,10 @@ bnet_recv_event_JOIN(BnetConnectionData *bnet, PurpleConvChat *chat,
         } else {
             BnetFilterJoinDelayCallback *closure;
 
-            bcu->filter_wait_callback = TRUE;
             closure = g_new0(BnetFilterJoinDelayCallback, 1);
             closure->bnet = bnet;
             closure->bcu = bcu;
-            purple_timeout_add(filter_joindelay_timeout, (GSourceFunc)bnet_filter_joindelay_timer, closure);
+            bcu->filter_joindelay_timer_handle = purple_timeout_add(filter_joindelay_timeout, (GSourceFunc)bnet_filter_joindelay_timer, closure);
         }
     }
 }
@@ -3318,13 +3305,26 @@ bnet_recv_event_LEAVE(BnetConnectionData *bnet, PurpleConvChat *chat,
     if (li != NULL) {
         bnet->bncs.channel.user_list = g_list_delete_link(bnet->bncs.channel.user_list, li);
     }
-    if (!bcu->filter_wait_callback) {
+    if (bcu->filter_joindelay_timer_handle) {
+        GQueue *new_queue;
+        // go through the delayed event queue and throw away everything for this user, they left and are filtered now
+        new_queue = g_queue_new();
+        while (!g_queue_is_empty(bnet->bncs.channel.delayed_event_queue)) {
+            BnetDelayedEvent *ev = g_queue_pop_tail(bnet->bncs.channel.delayed_event_queue);
+            if (strcmp(ev->name, name) == 0) {
+                bnet_delayed_event_free(ev);
+            } else {
+                g_queue_push_head(new_queue, ev);
+            }
+        }
+        // replace queue with a shorter queue without any of the filtered events
+        g_queue_free(bnet->bncs.channel.delayed_event_queue);
+        bnet->bncs.channel.delayed_event_queue = new_queue;
+    } else {
         if (chat != NULL) {
             purple_conv_chat_remove_user(chat, name, NULL);
         }
         bnet_channel_user_free(bcu);
-    } else {
-        bcu->left_channel = TRUE;
     }
 }
 
@@ -3402,7 +3402,7 @@ bnet_recv_event_TALK(BnetConnectionData *bnet, PurpleConvChat *chat,
     GList *li = g_list_find_custom(bnet->bncs.channel.user_list, name, bnet_channel_user_compare);
     if (li != NULL) {
         BnetChannelUser *bcu = li->data;
-        if (bcu->filter_wait_callback || chat == NULL) {
+        if (bcu->filter_joindelay_timer_handle || chat == NULL) {
             BnetDelayedEvent *ev = g_new0(BnetDelayedEvent, 1);
             ev->timestamp = timestamp;
             ev->name = g_strdup(name);
@@ -4073,7 +4073,7 @@ bnet_recv_event_EMOTE(BnetConnectionData *bnet, PurpleConvChat *chat,
     GList *li = g_list_find_custom(bnet->bncs.channel.user_list, name, bnet_channel_user_compare);
     if (li != NULL) {
         BnetChannelUser *bcu = li->data;
-        if (bcu->filter_wait_callback || chat == NULL) {
+        if (bcu->filter_joindelay_timer_handle || chat == NULL) {
             BnetDelayedEvent *ev = g_new0(BnetDelayedEvent, 1);
             ev->timestamp = timestamp;
             ev->name = g_strdup(name);
@@ -10285,7 +10285,7 @@ init_plugin(PurplePlugin *plugin)
     option = purple_account_option_string_new("Default clan members group", "grpclan", BNET_DEFAULT_GROUP_CLAN);
     prpl_info.protocol_options = g_list_append(prpl_info.protocol_options, option);
 
-    option = purple_account_option_bool_new("Show clan members on buddy list (buggy)", "showgrpclan", FALSE);
+    option = purple_account_option_bool_new("Show clan members on buddy list", "showgrpclan", FALSE);
     prpl_info.protocol_options = g_list_append(prpl_info.protocol_options, option);
 
     option = purple_account_option_bool_new("Use Diablo II character (buggy)", "use_d2realm", FALSE);

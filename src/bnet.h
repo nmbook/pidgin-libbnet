@@ -86,7 +86,7 @@
 #define BNET_DEFAULT_BNLSSERVER    "bnls.net"
 #define BNET_DEFAULT_BNLSPORT       9367
 #define BNET_DEFAULT_GROUP_FRIENDS "Friends"
-#define BNET_DEFAULT_GROUP_CLAN    "Clan %T members"
+#define BNET_DEFAULT_GROUP_CLAN    "Clan %s members"
 
 #define BNET_FILE_CACHE  "bnet-cache.xml"
 
@@ -459,8 +459,7 @@ typedef struct {
     
     char *stats_message;
 
-    gboolean filter_wait_callback;
-    gboolean left_channel;
+    guint filter_joindelay_timer_handle;
 } BnetChannelUser;
 
 // friend status flags
