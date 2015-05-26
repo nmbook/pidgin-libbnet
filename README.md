@@ -35,9 +35,9 @@ From version 0.8.0 and on, you will need to download the libgmp package (gmp on 
 To get the protocol icons, do the following copies from Github to your system:
 
 ```
-wget -O /usr/share/pixmaps/pidgin/protocols/16/bnet.png -- https://github.com/nmbook/pidgin-libbnet/pixmaps/pidgin/protocols/16/bnet.png
-wget -O /usr/share/pixmaps/pidgin/protocols/22/bnet.png -- https://github.com/nmbook/pidgin-libbnet/pixmaps/pidgin/protocols/22/bnet.png
-wget -O /usr/share/pixmaps/pidgin/protocols/48/bnet.png -- https://github.com/nmbook/pidgin-libbnet/pixmaps/pidgin/protocols/48/bnet.png
+wget -O /usr/share/pixmaps/pidgin/protocols/16/bnet.png -- https://github.com/nmbook/pidgin-libbnet/dist/pixmaps/pidgin/protocols/16/bnet.png
+wget -O /usr/share/pixmaps/pidgin/protocols/22/bnet.png -- https://github.com/nmbook/pidgin-libbnet/dist/pixmaps/pidgin/protocols/22/bnet.png
+wget -O /usr/share/pixmaps/pidgin/protocols/48/bnet.png -- https://github.com/nmbook/pidgin-libbnet/dist/pixmaps/pidgin/protocols/48/bnet.png
 ```
 
 Soon I plan to make a DEB and RPM that will automate this process.
